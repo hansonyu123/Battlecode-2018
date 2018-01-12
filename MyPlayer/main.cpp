@@ -229,7 +229,7 @@ int main() {
                         break;
                     }
                 if(!done) for(int i = 0; i < vmap_len; i++) //Try to build
-                    if(nearby_units[i] && !is_robot(nearby_units[i])
+                    if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
                         && bc_GameController_can_build(gc, id, bc_Unit_id(nearby_units[i])))
                     {
                         bc_GameController_build(gc, id, bc_Unit_id(nearby_units[i]));
@@ -262,7 +262,7 @@ int main() {
                         break;
                     }
                 if(!done) for(int i = 0; i < vmap_len; i++) //Try to repair something.
-                    if(nearby_units[i] && !is_robot(nearby_units[i])
+                    if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
                        && bc_GameController_can_repair(gc, id, bc_Unit_id(nearby_units[i])))
                    {
                        bc_GameController_repair(gc, id, bc_Unit_id(nearby_units[i]));

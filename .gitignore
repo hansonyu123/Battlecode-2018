@@ -1,1 +1,4 @@
 working_dir
+
+*.o
+*.bc18
