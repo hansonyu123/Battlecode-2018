@@ -9,6 +9,7 @@
 #include <map>
 #include <vector>
 #include <queue>
+#include <algorithm>
 using namespace std;
 
 
@@ -157,7 +158,7 @@ bool is_robot(bc_UnitType s) //Check if a unit is a robot.
     return (s != Rocket) && (s != Factory);
 }
 
-bool try_harvest(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units)
+bool try_harvest(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units, Ptr<bc_MapLocation> now_mlocation)
 {
     for(int i = 0; i < v.size(); i++)
         if(bc_GameController_can_harvest(gc, id, bc_MapLocation_direction_to(now_mlocation, v[i])))
@@ -170,7 +171,7 @@ bool try_harvest(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& n
 
 bool try_build(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units)
 {
-    for(int i = 0; i < vmap_len; i++)
+    for(int i = 0; i < v.size(); i++)
         if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
             && bc_GameController_can_build(gc, id, bc_Unit_id(nearby_units[i])))
         {
@@ -182,7 +183,7 @@ bool try_build(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nea
 
 bool try_replicate(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation)
 {
-    for(int i = 0; i < vmap_len; i++)
+    for(int i = 0; i < v.size(); i++)
         if(bc_GameController_can_replicate(gc, id, bc_MapLocation_direction_to(now_mlocation, v[i])))
         {
             bc_GameController_replicate(gc, id, bc_MapLocation_direction_to(now_mlocation, v[i]));
@@ -191,9 +192,9 @@ bool try_replicate(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> n
     return 0;
 }
 
-bool try_blueprint(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation, bc_Unit_unit_type structure)
+bool try_blueprint(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation, bc_UnitType structure)
 {
-    for(int i = 0; i < vmap_len; i++)
+    for(int i = 0; i < v.size(); i++)
         if(bc_GameController_can_blueprint(gc, id, structure, bc_MapLocation_direction_to(now_mlocation, v[i])))
         {
             bc_GameController_blueprint(gc, id, structure, bc_MapLocation_direction_to(now_mlocation, v[i]));
@@ -204,13 +205,53 @@ bool try_blueprint(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> n
 
 bool try_repair(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units)
 {
-    for(int i = 0; i < vmap_len; i++)
+    for(int i = 0; i < v.size(); i++)
         if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
            && bc_GameController_can_repair(gc, id, bc_Unit_id(nearby_units[i])))
        {
            bc_GameController_repair(gc, id, bc_Unit_id(nearby_units[i]));
            return 1;
        }
+    return 0;
+}
+
+bool try_unload(int id)
+{
+    int tmp[8]; for(int i = 0; i < 8; i++) tmp[i] = i;
+    random_shuffle(tmp, tmp+8);
+    for(int i = 0; i < 8; i++) if(bc_GameController_can_unload(gc, id, bc_Direction(tmp[i])))
+    {
+        bc_GameController_unload(gc, id, bc_Direction(tmp[i]));
+        return 1;
+    }
+    return 0;
+}
+
+bool try_produce(int id, vector<int>& weight) //weight: in proportion to the probability of producing a certain type
+{
+    int sum = 0; for(auto w:weight) sum += w;
+    while(sum)
+    {
+        int random_number = rand()%sum;
+        for(int i = 0; i < 5; i++)
+        {
+            if(random_number >= weight[i])
+            {
+                random_number -= weight[i];
+                continue;
+            }
+//            Decide to try to produce a bot of type i
+            if(bc_GameController_can_produce_robot(gc, id, bc_UnitType(i)))
+            {
+                bc_GameController_produce_robot(gc, id, bc_UnitType(i));
+                return 1;
+            }
+//            Failed. Set the weight of type i to zero and retry.
+            sum -= weight[i];
+            weight[i] = 0;
+        }
+    }
+//    Impossible to produce any unit. :(
     return 0;
 }
 
@@ -292,7 +333,7 @@ int main() {
 //                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
 //                TODO: Make every attempt into a function, and change the order based on some other numbers
                 bool done = 0, dontmove = 0;
-                if(!done) done = dontmove = try_harvest(id, v, nearby_units); //Stay still to continue harvesting
+                if(!done) done = dontmove = try_harvest(id, v, nearby_units, now_mlocation); //Stay still to continue harvesting
                 if(!done) done = dontmove = try_build(id, v, nearby_units); //Stay still to continue building
                 if(!done && typecount[Worker] < map_height[my_Planet]*map_width[my_Planet]/10) //Don't want too many workers
                     done = try_replicate(id, v, now_mlocation);
@@ -300,6 +341,17 @@ int main() {
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, v, nearby_units); //Stay still to continue repairing
                 if(!dontmove) random_walk(id);
+            }
+            else if(type == Factory)
+            {
+                if(!bc_Unit_structure_is_built(unit)) continue;
+                try_unload(id);
+                vector<int> weight({0,1,1,7,1});
+                try_produce(id, weight);
+            }
+            else
+            {
+                random_walk(id);
             }
         }
         bc_GameController_next_turn(gc);
