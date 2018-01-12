@@ -107,6 +107,7 @@ Ptr<bc_GameController> gc;
 //};
 
 bc_Planet my_Planet; //Current planet
+bc_Team my_Team; //Current team
 int map_height[2], map_width[2]; //The size of the Earth map and the Mars map.
 vector<bool> passable[2]; //The current map
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
@@ -255,6 +256,23 @@ bool try_produce(int id, vector<int>& weight) //weight: in proportion to the pro
     return 0;
 }
 
+bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
+{
+    if(!bc_GameController_is_attack_ready(gc, id)) return 0;
+    vector<int> tmp(nearby_units.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
+    random_shuffle(tmp.begin(), tmp.end());
+    for(int i = 0; i < nearby_units.size(); i++)
+    {
+        if(bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
+        if(bc_GameController_can_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
+        {
+            bc_GameController_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
+            return 1;
+        }
+    }
+    return 0;
+}
+
 bool random_walk(int id)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
@@ -280,6 +298,8 @@ int main() {
     check_errors("Connecting");
     planetmap[0] = bc_GameController_starting_map(gc, Earth);
     planetmap[1] = bc_GameController_starting_map(gc, Mars);
+    my_Planet = bc_GameController_planet(gc);
+    my_Team = bc_GameController_team(gc);
     organize_map_info();
     bc_GameController_queue_research(gc, Rocket);
     while (true)
@@ -351,6 +371,7 @@ int main() {
             }
             else
             {
+                try_attack(id, nearby_units);
                 random_walk(id);
             }
         }
