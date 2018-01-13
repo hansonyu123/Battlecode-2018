@@ -173,7 +173,7 @@ int main() {
 
         Ptr<bc_VecUnit> units(bc_GameController_my_units(gc));
         int len = bc_VecUnit_len(units);
-        //if(round == 1)
+        if(round == 1)
         {
             for(int i = 0; i < len; i++)
             {
@@ -214,11 +214,11 @@ int main() {
                         my_new_units[id] = My_Unit(id);
                     }
                 }
-                //else break;
+                else break;
             }
         }
         push_new_units();
-        my_units.clear();
+//        my_units.clear();
         bc_GameController_next_turn(gc);
     }
 }

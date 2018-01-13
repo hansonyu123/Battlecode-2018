@@ -110,6 +110,7 @@ bc_Planet my_Planet; //Current planet
 bc_Team my_Team; //Current team
 int map_height[2], map_width[2]; //The size of the Earth map and the Mars map.
 vector<bool> passable[2]; //The current map
+int passable_count[2];
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 
@@ -145,7 +146,7 @@ void organize_map_info() //Organize all the map information
         for(int x = 0; x < map_width[i]; x++) for(int y = 0; y < map_height[i]; y++) //Read in the map
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(bc_Planet(i), x, y));
-            passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
+            passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
         }
     }
     int h = map_height[my_Planet], w = map_width[my_Planet];
@@ -309,6 +310,8 @@ bool random_walk(int id)
     }
 }
 
+map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last_direction);
+
 bool walk_to(int id, Ptr<bc_MapLocation>& now_mlocation, Ptr<bc_MapLocation> destination)
 {
     int nowx = bc_MapLocation_x_get(now_mlocation);
@@ -318,19 +321,39 @@ bool walk_to(int id, Ptr<bc_MapLocation>& now_mlocation, Ptr<bc_MapLocation> des
     int x = bc_MapLocation_x_get(destination);
     int y = bc_MapLocation_y_get(destination);
     int loc = x+y*w;
+    if(not_free.count(id))
+    {
+        int clockwise = 2*((id+1)%2)-1; //counter-clockwise or clockwise, depends on id
+        int last_dir = not_free[id];
+        int j = (last_dir-2*clockwise+8)%8;
+        while(1)
+        {
+            if(bc_GameController_can_move(gc, id, bc_Direction(j)))
+            {
+                if(shortest_distance[now_loc][loc] > shortest_distance[now_loc+go(j)][loc])
+                    not_free.erase(id);
+                else not_free[id] = j;
+                bc_GameController_move_robot(gc, id, bc_Direction(j));
+                return 1;
+            }
+            j = (j+8+clockwise)%8;
+            if(j == (last_dir-2*clockwise+8)%8) return 0;
+        }
+    }
     for(int i = 0; i < 8; i++)
     {
         if(out_of_bound(now_loc, i)) continue;
         if(shortest_distance[now_loc+go(i)][loc] == shortest_distance[now_loc][loc]-1)//So this direction is the preferred one
         {
 //            Bug Pathing
-            cout<<"Direction "<<i<<endl;
             int clockwise = 2*(id%2)-1; //clockwise or counter-clockwise, depends on id
             int j = i;
             while(1)
             {
                 if(bc_GameController_can_move(gc, id, bc_Direction(j)))
                 {
+                    if(shortest_distance[now_loc][loc] <= shortest_distance[now_loc+go(j)][loc])
+                        not_free[id] = j;
                     bc_GameController_move_robot(gc, id, bc_Direction(j));
                     return 1;
                 }
@@ -442,7 +465,7 @@ int main() {
                 bool done = 0, dontmove = 0;
                 if(!done) done = dontmove = try_harvest(id, v, nearby_units, now_mlocation); //Stay still to continue harvesting
                 if(!done) done = dontmove = try_build(id, v, nearby_units); //Stay still to continue building
-                if(!done && typecount[Worker] < map_height[my_Planet]*map_width[my_Planet]/10) //Don't want too many workers
+                if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
                     done = try_replicate(id, v, now_mlocation);
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
@@ -453,16 +476,16 @@ int main() {
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,1,0,0,0});
+                vector<int> weight({0,1,1,7,1});
                 try_produce(id, weight);
             }
             else if(type == Knight)
             {
                 bool done = 0;
-                done = (try_attack(id, nearby_units));
-                walk_to_enemy(id, now_mlocation, enemy_location);
-                if(!done)
+                if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
+                else
                 {
+                    walk_to_enemy(id, now_mlocation, enemy_location);
                     //Reload map
                     vmap = bc_GameController_all_locations_within(gc, now_mlocation, 10);
                     vmap_len = bc_VecMapLocation_len(vmap);
@@ -473,7 +496,6 @@ int main() {
                         nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
                     try_attack(id, nearby_units);
                 }
-
             }
             else
             {
