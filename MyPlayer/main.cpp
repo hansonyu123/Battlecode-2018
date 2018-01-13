@@ -576,14 +576,13 @@ int main() {
                     }
                     walk_weight.push_back(20);
                     random_walk(id, walk_weight);
-                    print_sth = 0;
                 }
             }
             else if(type == Factory)
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,1,1,1,0});
+                vector<int> weight({0,0,0,0,0});
                 try_produce(id, weight);
             }
             else if(type == Knight)
