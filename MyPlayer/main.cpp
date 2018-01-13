@@ -10,6 +10,7 @@
 #include <vector>
 #include <queue>
 #include <algorithm>
+#include <random>
 using namespace std;
 
 
@@ -113,6 +114,7 @@ vector<bool> passable[2]; //The current map
 int passable_count[2];
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
+default_random_engine gen; //C++11 random engine
 
 bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
 {
@@ -181,6 +183,40 @@ bool is_robot(bc_UnitType s) //Check if a unit is a robot.
     return (s != Rocket) && (s != Factory);
 }
 
+inline int lowbit(int x){return x&(-x);}
+
+vector<int> get_random_indices(vector<int>& weight) //Get random indices according probabilities proportional to weights
+{
+//    I use Fenwick tree to expedite from O(n^2) to O(nlgn) here. Hope this is faster.
+    int sum = 0;
+    vector<int> bit(weight.size()+1);
+    for(int i = 0; i < weight.size(); i++) bit[i+1] = (sum += weight[i]);
+    for(int i = weight.size(); i; i--)bit[i] -= bit[i-lowbit(i)];
+    uniform_int_distribution<int> dis(0, 2147483647);
+    vector<int> ret;
+    int lg = 0, tmp = 1;
+    while(tmp <= weight.size()) lg++, tmp *= 2;
+    while(sum)
+    {
+        int random_number = dis(gen)%sum, ind = 0, tmpsum = 0;
+        for(int i = lg; i >= 0; i--)
+            if(ind + (1<<i) <= weight.size() && tmpsum + bit[ind+(1<<i)] <= random_number)
+            {
+                ind += (1<<i);
+                tmpsum += bit[ind];
+            }
+        ret.push_back(ind);
+        sum -= weight[ind];
+        int s = ind+1;
+        while(s <= weight.size())
+        {
+            bit[s] -= weight[ind];
+            s += lowbit(s);
+        }
+    }
+    return ret;
+}
+
 bool try_harvest(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units, Ptr<bc_MapLocation> now_mlocation)
 {
     for(int i = 0; i < v.size(); i++)
@@ -230,7 +266,8 @@ bool try_repair(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& ne
 {
     for(int i = 0; i < v.size(); i++)
         if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
-           && bc_GameController_can_repair(gc, id, bc_Unit_id(nearby_units[i])))
+           && bc_GameController_can_repair(gc, id, bc_Unit_id(nearby_units[i]))
+           && bc_Unit_max_health(nearby_units[i]) != bc_Unit_health(nearby_units[i]))
        {
            bc_GameController_repair(gc, id, bc_Unit_id(nearby_units[i]));
            return 1;
@@ -252,29 +289,16 @@ bool try_unload(int id)
 
 bool try_produce(int id, vector<int>& weight) //weight: in proportion to the probability of producing a certain type
 {
-    int sum = 0; for(auto w:weight) sum += w;
-    while(sum)
+    vector<int> tmp(get_random_indices(weight));
+    for(auto i:tmp)
     {
-        int random_number = rand()%sum;
-        for(int i = 0; i < 5; i++)
+        if(bc_GameController_can_produce_robot(gc, id, bc_UnitType(i)))
         {
-            if(random_number >= weight[i])
-            {
-                random_number -= weight[i];
-                continue;
-            }
-//            Decide to try to produce a bot of type i
-            if(bc_GameController_can_produce_robot(gc, id, bc_UnitType(i)))
-            {
-                bc_GameController_produce_robot(gc, id, bc_UnitType(i));
-                return 1;
-            }
-//            Failed. Set the weight of type i to zero and retry.
-            sum -= weight[i];
-            weight[i] = 0;
+            bc_GameController_produce_robot(gc, id, bc_UnitType(i));
+            return 1;
         }
     }
-//    Impossible to produce any unit. :(
+    //    Impossible to produce any unit. :(
     return 0;
 }
 
@@ -295,19 +319,47 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
     return 0;
 }
 
-bool random_walk(int id)
+//Not working now
+//bool try_javelin(int id, vector<Ptr<bc_Unit>>& nearby_units)
+//{
+//    if(!bc_GameController_is_javelin_ready(gc, id)) return 0;
+//    vector<int> tmp(nearby_units.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
+//    random_shuffle(tmp.begin(), tmp.end());
+//    for(int i = 0; i < nearby_units.size(); i++)
+//    {
+//        if(nearby_units[tmp[i]] && bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
+//        if(bc_GameController_can_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
+//        {
+//            bc_GameController_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
+//            return 1;
+//        }
+//    }
+//}
+
+bool print_sth;
+
+bool random_walk(int id, vector<int>& weight)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    while(1)
+    while(weight.size() < 9) weight.push_back(1);
+    vector<int> tmp(get_random_indices(weight));
+    for(auto dir:tmp)
     {
-        int random_number = rand()%9; //a random direction
-        if(bc_Direction(random_number) == Center) return 0;
-        if(bc_GameController_can_move(gc, id, bc_Direction(random_number)))
+        if(bc_Direction(dir) == Center) return 0;
+        if(bc_GameController_can_move(gc, id, bc_Direction(dir)))
         {
-            bc_GameController_move_robot(gc, id, bc_Direction(random_number));
+            bc_GameController_move_robot(gc, id, bc_Direction(dir));
+            if(print_sth) cout<<"DIR: "<<dir<<endl;
             return 1;
         }
     }
+    return 0;
+}
+
+bool random_walk(int id)
+{
+    vector<int> tmp(9,1);
+    return random_walk(id, tmp);
 }
 
 map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last_direction);
@@ -390,6 +442,52 @@ bool walk_to_enemy(int id, Ptr<bc_MapLocation>& now_mlocation, vector<Ptr<bc_Map
     return walk_to(id, now_mlocation, new_bc_MapLocation(my_Planet, nearest_x, nearest_y));
 }
 
+int debug_id;
+
+//This simulates the attraction and the repulsion by all other units with gravity force
+pair<double, double> worker_gravity_force(Ptr<bc_MapLocation> now_mlocation, vector<Ptr<bc_MapLocation>>& whole_map, vector<Ptr<bc_Unit>>& all_units)
+{
+    double force_x = 0, force_y = 0;
+    int now_x = bc_MapLocation_x_get(now_mlocation), now_y = bc_MapLocation_y_get(now_mlocation);
+
+    for(int i = 0; i < whole_map.size(); i++)
+    {
+//        Calculate the "mass": positive => attractive, negative => repel
+        double mass = 0;
+        int x = bc_MapLocation_x_get(whole_map[i]), y = bc_MapLocation_y_get(whole_map[i]);
+        if(now_x == x && now_y == y) continue;
+        mass += bc_GameController_karbonite_at(gc, whole_map[i]);
+        if(!bc_GameController_is_occupiable(gc, whole_map[i])) mass -= 5;
+        if(all_units[i])
+        {
+            bc_UnitType type = bc_Unit_unit_type(all_units[i]);
+            if(bc_Unit_team(all_units[i]) == my_Team)
+            {
+                if(!is_robot(type))
+                {
+                    if(bc_Unit_structure_is_built(all_units[i]))
+                    {
+                        double lost_health = bc_Unit_max_health(all_units[i])-bc_Unit_health(all_units[i]);
+                        double dmass = lost_health/bc_Unit_max_health(all_units[i])*(bc_UnitType_blueprint_cost(type)+50)-10;
+                        cout<<dmass<<endl;
+                        mass += dmass;
+                    }
+                    else mass += bc_UnitType_blueprint_cost(type)-20;
+                }
+            }
+            else if(is_robot(type) && type != Worker && type != Healer) mass -= 30;
+        }
+//        Calculate the force
+        double difx = x-now_x, dify = y-now_y;
+        double mag = sqrt(difx*difx + dify*dify);
+        force_x += difx/mag/mag/mag*mass, force_y += dify/mag/mag/mag*mass;
+    }
+    double center_difx = map_width[my_Planet]/2 - now_x, center_dify = map_height[my_Planet]/2-now_y;
+//    Prevent worker from sticking to the wall
+    force_x += center_difx+rand()%7-3, force_y += center_dify+rand()%7-3; //Random term
+    return make_pair(force_x, force_y);
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -404,6 +502,7 @@ int main() {
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<endl;
     organize_map_info();
+    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
     bc_GameController_queue_research(gc, Rocket);
     while (true)
     {
@@ -470,18 +569,33 @@ int main() {
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, v, nearby_units); //Stay still to continue repairing
-                if(!dontmove) random_walk(id);
+                if(!dontmove)
+                {
+                    auto f = worker_gravity_force(now_mlocation, whole_map, all_units);
+                    //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
+                    vector<int> walk_weight;
+                    for(int i = 0; i < 8; i++)
+                    {
+                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
+                        int dify = (go(i)+1)/map_width[my_Planet];
+                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
+                    }
+                    walk_weight.push_back(20);
+                    random_walk(id, walk_weight);
+                    print_sth = 0;
+                }
             }
             else if(type == Factory)
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,1,1,7,1});
+                vector<int> weight({0,1,0,0,0});
                 try_produce(id, weight);
             }
             else if(type == Knight)
             {
                 bool done = 0;
+                //try_javelin(id, nearby_units);
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
                 else
                 {
