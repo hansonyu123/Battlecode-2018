@@ -113,8 +113,30 @@ vector<bool> passable[2]; //The current map
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 
+bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
+{
+    int h = map_height[my_Planet], w = map_width[my_Planet];
+    if(dir == 0) return loc/w == h-1;
+    if(dir == 1) return loc/w == h-1 || loc%w == w-1;
+    if(dir == 2) return loc%w == w-1;
+    if(dir == 3) return loc%w == w-1 || loc/w == 0;
+    if(dir == 4) return loc/w == 0;
+    if(dir == 5) return loc/w == 0 || loc%w == 0;
+    if(dir == 6) return loc%w == 0;
+    if(dir == 7) return loc%w == 0 || loc/w == h-1;
+    if(dir == 8) return false;
+}
+
+int go(int dir) //The number added to go in the direction dir
+{
+    int w = map_width[my_Planet];
+    int a[9] = {w, w+1, 1, -w+1, -w, -w-1, -1, w-1, 0};
+    return a[dir];
+}
+
 void organize_map_info() //Organize all the map information
 {
+    cout<<"Start organizing"<<endl;
     for(int i = 0; i < 2; i++)
     {
         map_height[i] = bc_PlanetMap_height_get(planetmap[i]);
@@ -129,22 +151,20 @@ void organize_map_info() //Organize all the map information
     int h = map_height[my_Planet], w = map_width[my_Planet];
     vector<bool>& p = passable[my_Planet];
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
-    for(int i = 0; i < h*w; i++) // BFS. Apology for the ugly code.
+    cout<<"Start BFS"<<endl;
+    for(int i = 0; i < h*w; i++) // BFS.
     {
         if(!p[i]) continue;
         queue<int> q; q.push(i);
         while(q.size())
         {
             int j = q.front(); q.pop();
-            bool up = j/w != h-1, down = j/w, lft = j%w, rght = j%w != w-1;
-            if(up && shortest_distance[i][j+w] == -1 && p[j+w]) shortest_distance[i][j+w] = shortest_distance[i][j]+1, q.push(j+w);
-            if(up && rght && shortest_distance[i][j+w+1] == -1 && p[j+w+1]) shortest_distance[i][j+w+1] = shortest_distance[i][j]+1, q.push(j+w+1);
-            if(rght && shortest_distance[i][j+1] == -1 && p[j+1]) shortest_distance[i][j+1] = shortest_distance[i][j]+1, q.push(j+1);
-            if(rght && down && shortest_distance[i][j-w+1] == -1 && p[j-w+1]) shortest_distance[i][j-w+1] = shortest_distance[i][j]+1, q.push(j-w+1);
-            if(down && shortest_distance[i][j-w] == -1 && p[j-w]) shortest_distance[i][j-w] = shortest_distance[i][j]+1, q.push(j-w);
-            if(lft && down && shortest_distance[i][j-w-1] == -1 && p[j-w-1]) shortest_distance[i][j-w-1] = shortest_distance[i][j]+1, q.push(j-w-1);
-            if(lft && shortest_distance[i][j-1] == -1 && p[j-1]) shortest_distance[i][j-1] = shortest_distance[i][j]+1, q.push(j-1);
-            if(up && lft && shortest_distance[i][j+w-1] == -1 && p[j+w-1]) shortest_distance[i][j+w-1] = shortest_distance[i][j]+1, q.push(j+w-1);
+            for(int k = 0; k < 8; k++)
+                if(!out_of_bound(j, k) && shortest_distance[i][j+go(k)] == -1 && p[j+go(k)])
+                {
+                    shortest_distance[i][j+go(k)] = shortest_distance[i][j]+1;
+                    q.push(j+go(k));
+                }
         }
     }
     for(int i = 0; i < h*w; i++) //For debug uses.
@@ -152,6 +172,7 @@ void organize_map_info() //Organize all the map information
         cout<<shortest_distance[2*w+2][i]<<' ';
         if(!(i+1)%w) cout<<endl;
     }
+    cout<<"End organizing"<<endl;
 }
 
 bool is_robot(bc_UnitType s) //Check if a unit is a robot.
@@ -263,7 +284,7 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
     random_shuffle(tmp.begin(), tmp.end());
     for(int i = 0; i < nearby_units.size(); i++)
     {
-        if(bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
+        if(nearby_units[tmp[i]] && bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
         if(bc_GameController_can_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
         {
             bc_GameController_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
@@ -288,6 +309,64 @@ bool random_walk(int id)
     }
 }
 
+bool walk_to(int id, Ptr<bc_MapLocation>& now_mlocation, Ptr<bc_MapLocation> destination)
+{
+    int nowx = bc_MapLocation_x_get(now_mlocation);
+    int nowy = bc_MapLocation_y_get(now_mlocation);
+    int h = map_height[my_Planet], w = map_width[my_Planet];
+    int now_loc = nowx+nowy*w;
+    int x = bc_MapLocation_x_get(destination);
+    int y = bc_MapLocation_y_get(destination);
+    int loc = x+y*w;
+    for(int i = 0; i < 8; i++)
+    {
+        if(out_of_bound(now_loc, i)) continue;
+        if(shortest_distance[now_loc+go(i)][loc] == shortest_distance[now_loc][loc]-1)//So this direction is the preferred one
+        {
+//            Bug Pathing
+            cout<<"Direction "<<i<<endl;
+            int clockwise = 2*(id%2)-1; //clockwise or counter-clockwise, depends on id
+            int j = i;
+            while(1)
+            {
+                if(bc_GameController_can_move(gc, id, bc_Direction(j)))
+                {
+                    bc_GameController_move_robot(gc, id, bc_Direction(j));
+                    return 1;
+                }
+                j = (j+8+clockwise)%8;
+                if(j == i) return 0;
+            }
+        }
+    }
+    return 0; //Although it should never reach here
+}
+
+bool walk_to_enemy(int id, Ptr<bc_MapLocation>& now_mlocation, vector<Ptr<bc_MapLocation>>& enemy_location)
+{
+    if(!bc_GameController_is_move_ready(gc, id)) return 0;
+    unsigned int nearest_dist = -1;
+    int nearest_x, nearest_y;
+    vector<int> tmp(enemy_location.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
+    random_shuffle(tmp.begin(), tmp.end());
+    int nowx = bc_MapLocation_x_get(now_mlocation);
+    int nowy = bc_MapLocation_y_get(now_mlocation);
+    int h = map_height[my_Planet], w = map_width[my_Planet];
+    int now_loc = nowx+nowy*w;
+    for(int i = 0; i < enemy_location.size(); i++)
+    {
+        int x = bc_MapLocation_x_get(enemy_location[tmp[i]]);
+        int y = bc_MapLocation_y_get(enemy_location[tmp[i]]);
+        if(shortest_distance[y*w+x][nowy*w+nowx] < nearest_dist)
+        {
+            nearest_dist = shortest_distance[y*w+x][nowy*w+nowx];
+            nearest_x = x, nearest_y = y;
+        }
+    }
+    if(nearest_dist == -1) return 0;
+    return walk_to(id, now_mlocation, new_bc_MapLocation(my_Planet, nearest_x, nearest_y));
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -300,6 +379,7 @@ int main() {
     planetmap[1] = bc_GameController_starting_map(gc, Mars);
     my_Planet = bc_GameController_planet(gc);
     my_Team = bc_GameController_team(gc);
+    cout<<"I am team "<<my_Team<<endl;
     organize_map_info();
     bc_GameController_queue_research(gc, Rocket);
     while (true)
@@ -326,10 +406,17 @@ int main() {
 
         vector<Ptr<bc_Unit>> all_units(whole_map.size()); // Save the whole visible units
         for(int i = 0; i < whole_map.size(); i++) if(bc_GameController_has_unit_at_location(gc, whole_map[i]))
-            all_units.push_back(bc_GameController_sense_unit_at_location(gc, whole_map[i]));
+            all_units[i] = bc_GameController_sense_unit_at_location(gc, whole_map[i]);
 
-        for(int i = 0; i < len; i++)
+        vector<Ptr<bc_MapLocation>> enemy_location; // Save the locations of enemies
+        for(int i = 0; i < whole_map.size(); i++) if(all_units[i] && bc_Unit_team(all_units[i]) != my_Team)
+            enemy_location.push_back(whole_map[i]);
+
+        vector<int> tmp(len); for(int i = 0; i < len; i++) tmp[i] = i;
+        random_shuffle(tmp.begin(), tmp.end());
+        for(int ii = 0; ii < len; ii++)
         {
+            int i = tmp[ii];
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
             int id = bc_Unit_id(unit);
             bc_UnitType type = bc_Unit_unit_type(unit);
@@ -366,8 +453,27 @@ int main() {
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,1,1,7,1});
+                vector<int> weight({0,1,0,0,0});
                 try_produce(id, weight);
+            }
+            else if(type == Knight)
+            {
+                bool done = 0;
+                done = (try_attack(id, nearby_units));
+                walk_to_enemy(id, now_mlocation, enemy_location);
+                if(!done)
+                {
+                    //Reload map
+                    vmap = bc_GameController_all_locations_within(gc, now_mlocation, 10);
+                    vmap_len = bc_VecMapLocation_len(vmap);
+                    v.clear(); //Save the squares within attack/ability range
+                    for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
+                    nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
+                    for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
+                        nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+                    try_attack(id, nearby_units);
+                }
+
             }
             else
             {
