@@ -336,8 +336,6 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
 //    }
 //}
 
-bool print_sth;
-
 bool random_walk(int id, vector<int>& weight)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
@@ -349,7 +347,6 @@ bool random_walk(int id, vector<int>& weight)
         if(bc_GameController_can_move(gc, id, bc_Direction(dir)))
         {
             bc_GameController_move_robot(gc, id, bc_Direction(dir));
-            if(print_sth) cout<<"DIR: "<<dir<<endl;
             return 1;
         }
     }
@@ -442,8 +439,6 @@ bool walk_to_enemy(int id, Ptr<bc_MapLocation>& now_mlocation, vector<Ptr<bc_Map
     return walk_to(id, now_mlocation, new_bc_MapLocation(my_Planet, nearest_x, nearest_y));
 }
 
-int debug_id;
-
 //This simulates the attraction and the repulsion by all other units with gravity force
 pair<double, double> worker_gravity_force(Ptr<bc_MapLocation> now_mlocation, vector<Ptr<bc_MapLocation>>& whole_map, vector<Ptr<bc_Unit>>& all_units)
 {
@@ -469,7 +464,6 @@ pair<double, double> worker_gravity_force(Ptr<bc_MapLocation> now_mlocation, vec
                     {
                         double lost_health = bc_Unit_max_health(all_units[i])-bc_Unit_health(all_units[i]);
                         double dmass = lost_health/bc_Unit_max_health(all_units[i])*(bc_UnitType_blueprint_cost(type)+50)-10;
-                        cout<<dmass<<endl;
                         mass += dmass;
                     }
                     else mass += bc_UnitType_blueprint_cost(type)-20;
@@ -589,7 +583,7 @@ int main() {
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,1,0,0,0});
+                vector<int> weight({0,1,1,1,0});
                 try_produce(id, weight);
             }
             else if(type == Knight)
