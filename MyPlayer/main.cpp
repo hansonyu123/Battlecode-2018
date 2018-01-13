@@ -320,21 +320,21 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
 }
 
 //Not working now
-//bool try_javelin(int id, vector<Ptr<bc_Unit>>& nearby_units)
-//{
-//    if(!bc_GameController_is_javelin_ready(gc, id)) return 0;
-//    vector<int> tmp(nearby_units.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
-//    random_shuffle(tmp.begin(), tmp.end());
-//    for(int i = 0; i < nearby_units.size(); i++)
-//    {
-//        if(nearby_units[tmp[i]] && bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
-//        if(bc_GameController_can_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
-//        {
-//            bc_GameController_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
-//            return 1;
-//        }
-//    }
-//}
+bool try_javelin(int id, vector<Ptr<bc_Unit>>& nearby_units)
+{
+    if(!bc_GameController_is_javelin_ready(gc, id)) return 0;
+    vector<int> tmp(nearby_units.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
+    random_shuffle(tmp.begin(), tmp.end());
+    for(int i = 0; i < nearby_units.size(); i++)
+    {
+        if(nearby_units[tmp[i]] && bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
+        if(bc_GameController_can_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
+        {
+            bc_GameController_javelin(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
+            return 1;
+        }
+    }
+}
 
 bool random_walk(int id, vector<int>& weight)
 {
@@ -582,13 +582,14 @@ int main() {
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
-                vector<int> weight({0,0,0,0,0});
+                vector<int> weight({0,0,1,1,0});
+                if(my_Team == bc_Team(1)) weight[1] = 1000;
                 try_produce(id, weight);
             }
             else if(type == Knight)
             {
                 bool done = 0;
-                //try_javelin(id, nearby_units);
+                try_javelin(id, nearby_units);
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
                 else
                 {
