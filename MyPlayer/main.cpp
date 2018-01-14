@@ -11,6 +11,7 @@
 #include <queue>
 #include <algorithm>
 #include <random>
+#include <set>
 using namespace std;
 
 
@@ -53,6 +54,8 @@ inline void release(bc_Location *location){delete_bc_Location(location);}
 inline void release(bc_MapLocation *maplocation){delete_bc_MapLocation(maplocation);}
 inline void release(bc_VecUnit *units){delete_bc_VecUnit(units);}
 inline void release(bc_VecMapLocation *vecmaplocation){delete_bc_VecMapLocation(vecmaplocation);}
+inline void release(bc_ResearchInfo *research_info){delete_bc_ResearchInfo(research_info);}
+inline void release(bc_VecUnitID *units){delete_bc_VecUnitID(units);}
 
 //Smart pointer. PLEASE ALWAYS USE SMART POINTER
 //This prevents memory leaks and saves time :)
@@ -115,6 +118,8 @@ int passable_count[2];
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 default_random_engine gen; //C++11 random engine
+bool can_build_rocket;
+set<int> building_rocket;
 
 bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
 {
@@ -336,6 +341,54 @@ bool try_javelin(int id, vector<Ptr<bc_Unit>>& nearby_units)
     }
 }
 
+bool try_heal(int id, vector<Ptr<bc_Unit>>& nearby_units)
+{
+    if(!bc_GameController_is_heal_ready(gc, id)) return 0;
+    vector<int> weight(nearby_units.size());
+    for(int i = 0; i < nearby_units.size(); i++)
+    {
+        if(bc_Unit_team(nearby_units[i]) != my_Team) continue;
+        bc_UnitType type = bc_Unit_unit_type(nearby_units[i]);
+        if(!is_robot(type)) continue;
+        int lost_health = bc_Unit_max_health(nearby_units[i]) - bc_Unit_health(nearby_units[i]);
+        if(type == Worker) weight[i] = lost_health;
+        else if(type == Knight) weight[i] = lost_health*20;
+        else if(type == Ranger) weight[i] = lost_health*15;
+        else if(type == Mage) weight[i] = lost_health*40;
+        else if(type == Healer) weight[i] = lost_health*3;
+    }
+    vector<int> tmp(get_random_indices(weight));
+    for(auto i:tmp)
+    {
+        if(bc_GameController_can_heal(gc, id, bc_Unit_id(nearby_units[i])))
+        {
+            bc_GameController_heal(gc, id, bc_Unit_id(nearby_units[i]));
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void try_load(int id, vector<Ptr<bc_Unit>>& nearby_units)
+{
+    for(int i = 0; i < nearby_units.size(); i++)
+    {
+        int id2 = bc_Unit_id(nearby_units[i]);
+        if(bc_GameController_can_load(gc, id, id2)) bc_GameController_load(gc, id, id2);
+    }
+}
+
+void launch(int id)
+{
+    while(1)
+    {
+        int x = rand()%map_width[Mars], y = rand()%map_height[Mars];
+        if(!passable[Mars][y*map_width[Mars]+x]) continue;
+        bc_GameController_launch_rocket(gc, id, new_bc_MapLocation(Mars, x, y));
+        break;
+    }
+}
+
 bool random_walk(int id, vector<int>& weight)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
@@ -482,6 +535,53 @@ pair<double, double> worker_gravity_force(Ptr<bc_MapLocation> now_mlocation, vec
     return make_pair(force_x, force_y);
 }
 
+pair<double, double> healer_gravity_force(Ptr<bc_MapLocation> now_mlocation, vector<Ptr<bc_MapLocation>>& whole_map, vector<Ptr<bc_Unit>>& all_units)
+{
+    double force_x = 0, force_y = 0;
+    int now_x = bc_MapLocation_x_get(now_mlocation), now_y = bc_MapLocation_y_get(now_mlocation);
+
+    for(int i = 0; i < whole_map.size(); i++)
+    {
+//        Calculate the "mass": positive => attractive, negative => repel
+        double mass = 0;
+        int x = bc_MapLocation_x_get(whole_map[i]), y = bc_MapLocation_y_get(whole_map[i]);
+        if(now_x == x && now_y == y) continue;
+        if(!bc_GameController_is_occupiable(gc, whole_map[i])) mass -= 3;
+        if(all_units[i])
+        {
+            bc_UnitType type = bc_Unit_unit_type(all_units[i]);
+            if(bc_Unit_team(all_units[i]) == my_Team)
+            {
+                if(is_robot(type))
+                {
+                    if(type == Worker) mass++;
+                    if(type == Knight) mass += 20;
+                    if(type == Ranger) mass += 15;
+                    if(type == Mage) mass += 40;
+                    if(type == Healer) mass += 3;
+                }
+                else mass -= 30;
+            }
+            else if(is_robot(type) && type != Worker && type != Healer) mass -= 50;
+        }
+//        Calculate the force
+        double difx = x-now_x, dify = y-now_y;
+        double mag = sqrt(difx*difx + dify*dify);
+        force_x += difx/mag/mag/mag*mass, force_y += dify/mag/mag/mag*mass;
+    }
+    double center_difx = map_width[my_Planet]/2 - now_x, center_dify = map_height[my_Planet]/2-now_y;
+//    Prevent worker from sticking to the wall
+    force_x += center_difx+rand()%7-3, force_y += center_dify+rand()%7-3; //Random term
+    return make_pair(force_x, force_y);
+}
+
+bool can_move(int id)
+{
+    if(!bc_GameController_is_move_ready(gc,id)) return 0;
+    for(int i = 0; i < 8; i++) if(bc_GameController_can_move(gc, id, bc_Direction(i))) return 1;
+    return 0;
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -496,13 +596,31 @@ int main() {
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<endl;
     organize_map_info();
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Rocket);
+    bc_GameController_queue_research(gc, Worker);
+//    if(my_Team == bc_Team(0))
+//    {
+//        bc_GameController_queue_research(gc, Healer);
+//        bc_GameController_queue_research(gc, Knight);
+//        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+//        bc_GameController_queue_research(gc, Rocket);
+//    }
+//    else
+    {
+        bc_GameController_queue_research(gc, Rocket);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Knight);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+    }
     while (true)
     {
         uint32_t round = bc_GameController_round(gc);
         printf("Round: %d\n", round);
-        cout<<"Karbonite:"<<bc_GameController_karbonite(gc)<<endl;//For debug
+        int karb = bc_GameController_karbonite(gc);
+        cout<<karb<<endl;//For debug
+
+        Ptr<bc_ResearchInfo> research_info(bc_GameController_research_info(gc));
+        if(bc_ResearchInfo_get_level(research_info, Rocket)) can_build_rocket = 1;
+        cout<<can_build_rocket<<endl;
 
         Ptr<bc_VecUnit> units(bc_GameController_my_units(gc));
         int len = bc_VecUnit_len(units);
@@ -532,12 +650,13 @@ int main() {
         random_shuffle(tmp.begin(), tmp.end());
         for(int ii = 0; ii < len; ii++)
         {
+            if(round == 150) cout<<"INITIALIZE"<<endl;
             int i = tmp[ii];
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
             int id = bc_Unit_id(unit);
             bc_UnitType type = bc_Unit_unit_type(unit);
             Ptr<bc_Location> tmp(bc_Unit_location(unit));
-            if(!bc_Location_is_on_map(tmp)) continue; //It should always be true though
+            if(!bc_Location_is_on_map(tmp)) continue;
             Ptr<bc_MapLocation> now_mlocation(bc_Location_map_location(tmp));
 //            Ranger's active ability is infinity, so we have to be careful by taking min with 50.
             unsigned int dist = 2;
@@ -549,6 +668,7 @@ int main() {
             vector<Ptr<bc_Unit>> nearby_units(vmap_len); //Save the units within attack/ability range
             for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+            if(round == 150) cout<<"TYPE "<<type<<" START"<<endl;
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -559,13 +679,14 @@ int main() {
                 if(!done) done = dontmove = try_harvest(id, v, nearby_units, now_mlocation); //Stay still to continue harvesting
                 if(!done) done = dontmove = try_build(id, v, nearby_units); //Stay still to continue building
                 if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
-                    done = try_replicate(id, v, now_mlocation);
+                    if(!can_build_rocket || karb-15 >= ((len+7)/12-building_rocket.size()) * 100)
+                        done = try_replicate(id, v, now_mlocation);
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, v, nearby_units); //Stay still to continue repairing
-                if(!dontmove)
+                if(!dontmove && can_move(id))
                 {
-                    auto f = worker_gravity_force(now_mlocation, whole_map, all_units);
+                    auto f = worker_gravity_force(now_mlocation, v, nearby_units);
                     //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
                     vector<int> walk_weight;
                     for(int i = 0; i < 8; i++)
@@ -581,9 +702,10 @@ int main() {
             else if(type == Factory)
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
+                if(can_build_rocket && karb-20 < ((len+7)/12-building_rocket.size())*100) continue;
                 try_unload(id);
-                vector<int> weight({0,0,1,1,0});
-                if(my_Team == bc_Team(1)) weight[1] = 1000;
+                vector<int> weight({0,1,3,3,1});
+                if(!typecount[0]) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 try_produce(id, weight);
             }
             else if(type == Knight)
@@ -591,9 +713,8 @@ int main() {
                 bool done = 0;
                 try_javelin(id, nearby_units);
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
-                else
+                else if(walk_to_enemy(id, now_mlocation, enemy_location))
                 {
-                    walk_to_enemy(id, now_mlocation, enemy_location);
                     //Reload map
                     vmap = bc_GameController_all_locations_within(gc, now_mlocation, 10);
                     vmap_len = bc_VecMapLocation_len(vmap);
@@ -603,6 +724,43 @@ int main() {
                     for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                         nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
                     try_attack(id, nearby_units);
+                }
+            }
+            else if(type == Healer)
+            {
+                try_heal(id, nearby_units);
+                if(can_move(id))
+                {
+                    auto f = healer_gravity_force(now_mlocation, v, nearby_units);
+                    //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
+                    vector<int> walk_weight;
+                    for(int i = 0; i < 8; i++)
+                    {
+                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
+                        int dify = (go(i)+1)/map_width[my_Planet];
+                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
+                    }
+                    walk_weight.push_back(20);
+                    if(random_walk(id, walk_weight)) try_heal(id, nearby_units);
+                }
+            }
+            else if(type == Rocket)
+            {
+                if(my_Planet == Earth)
+                {
+                    if(bc_Unit_structure_is_built(unit))
+                    {
+                        building_rocket.erase(id);
+                        try_load(id, nearby_units);
+                        Ptr<bc_VecUnitID> garrison_units(bc_Unit_structure_garrison(unit));
+                        if((bc_VecUnitID_len(garrison_units) && bc_Unit_health(unit) < 200)
+                           || bc_VecUnitID_len(garrison_units) == 8 || round == 749) launch(id);
+                    }
+                    else building_rocket.insert(id);
+                }
+                else
+                {
+                    try_unload(id);
                 }
             }
             else
