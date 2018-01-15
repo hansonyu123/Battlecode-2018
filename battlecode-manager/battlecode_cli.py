@@ -24,26 +24,16 @@ PORT = 16147
 
 
 class Logger(object):
-<<<<<<< HEAD
-    def __init__(self, prefix):
-        self.logs = io.StringIO()
-        self.prefix = prefix
-=======
     def __init__(self, prefix, print=True):
         self.logs = io.StringIO()
         self.prefix = prefix
         self.print = print
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
     def __call__(self, v):
         data = v.decode()
         self.logs.write(data)
-<<<<<<< HEAD
-        print(self.prefix, data, end='')
-=======
         if self.print:
             print(self.prefix, data, end='')
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
 
 def working_dir_message(working_dir):
@@ -67,11 +57,8 @@ def prepare_working_directory(working_dir):
     # print("Working dir ready!")
 
 
-<<<<<<< HEAD
-def run_game(game, dockers, args, sock_file):
-=======
 def run_game(game, dockers, args, sock_file, scrimmage=False):
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
+
     '''
     This contains the logic that needs to be cleaned up at the end of a game
     If there is something that needs to be cleaned up add it in the try catch
@@ -83,39 +70,6 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
 
     viewer_server = server.start_viewer_server(PORT, game) if args['use_viewer'] else None
 
-<<<<<<< HEAD
-    # Start the docker instances
-    for player_key in dockers:
-        docker_inst = dockers[player_key]
-        docker_inst.start()
-        for player_ in game.players:
-            if player_['id'] == player_key:
-                player = player_['player']
-                break
-        if player.planet == bc.Planet.Earth:
-            planet = 'earth'
-        else:
-            planet = 'mars'
-        if player.team == bc.Team.Blue:
-            team = 'blue'
-        else:
-            team = 'red'
-        name = f'[{planet}:{team}]'
-        logger = Logger(name)
-        docker_inst.stream_logs(line_action=logger)
-        player_['logger'] = logger
-
-    # Wait until all the code is done then clean up
-    while not game.game_over:
-        time.sleep(0.1)
-
-    print('Killing game server.')
-    main_server.shutdown()
-    try:
-        main_server.server_close()
-    except e:
-        print(e)
-=======
     try:
         # Start the docker instances
         for player_key in dockers:
@@ -152,7 +106,6 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
 
         if viewer_server is not None:
             viewer_server.shutdown()
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
     match_file = {}
     match_file['message'] = game.viewer_messages
@@ -165,13 +118,8 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
         winner = game.winner
 
     match_file['metadata'] = {
-<<<<<<< HEAD
-        'player1': args['dir_p1'][8:],
-        'player2': args['dir_p2'][8:],
-=======
         'player1': 'player1' if scrimmage else args['dir_p1'][8:],
         'player2': 'player2' if scrimmage else args['dir_p2'][8:],
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
         'winner': winner
     }
 
@@ -182,16 +130,6 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
         if not os.path.isabs(match_output):
             match_output = abspath(os.path.join('..', str(match_output)))
 
-<<<<<<< HEAD
-    print("Dumping matchfile to", match_output)
-    match_ptr = open(match_output, 'w')
-    json.dump(match_file, match_ptr)
-    match_ptr.close()
-    if viewer_server is not None:
-        viewer_server.shutdown()
-
-    return winner
-=======
 
     if not scrimmage:
         print("Saving replay to", match_output)
@@ -203,17 +141,12 @@ def run_game(game, dockers, args, sock_file, scrimmage=False):
         return winner
     else:
         return winner, match_file
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
 
 def cleanup(dockers, args, sock_file):
     '''
     Clean up that needs to be done at the end of a game
     '''
-<<<<<<< HEAD
-    print("Cleaning up Docker and Socket...")
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
     for player_key in dockers:
         docker_inst = dockers[player_key]
         docker_inst.destroy()
@@ -222,11 +155,6 @@ def cleanup(dockers, args, sock_file):
         # only unlink unix sockets
         os.unlink(sock_file)
 
-<<<<<<< HEAD
-    print("Ready to run next game.")
-
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
 def get_map(map_name):
     '''
@@ -237,10 +165,6 @@ def get_map(map_name):
         with open(map_name) as f:
             contents = f.read()
         print("Loading map " + map_name)
-<<<<<<< HEAD
-        return bc.GameMap.from_json(contents)
-    except Exception as e:
-=======
         if map_name.endswith('.bc18map'):
             return bc.GameMap.from_json(contents)
         elif map_name.endswith('.bc18t'):
@@ -248,17 +172,10 @@ def get_map(map_name):
     except Exception as e:
         if 'testmap' not in map_name:
             print('failed to load map:', e)
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
         try:
             with open('/player/' + map_name) as f:
                contents = f.read()
             print("Loading map " + map_name)
-<<<<<<< HEAD
-            return bc.GameMap.from_json(contents)
-        except Exception as e:
-            print("Loading test map...")
-            return bc.GameMap.test_map()
-=======
             if map_name.endswith('.bc18map'):
                 return bc.GameMap.from_json(contents)
             elif map_name.endswith('.bc18t'):
@@ -277,7 +194,6 @@ def get_map(map_name):
             except Exception as e:
                 print("Loading test map...")
                 return bc.GameMap.test_map()
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
 def create_game(args):
     '''
@@ -326,8 +242,6 @@ def create_game(args):
             dockers[key] = PlainPlayer(sock_file, working_dir=working_dir, player_key=key, local_dir=local_dir)
 
     return (game, dockers, sock_file)
-<<<<<<< HEAD
-=======
 
 def create_scrimmage_game(args):
     '''
@@ -364,4 +278,3 @@ def create_scrimmage_game(args):
                                working_dir=working_dir)
 
     return (game, dockers, sock_file)
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30

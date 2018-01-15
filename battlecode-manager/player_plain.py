@@ -29,11 +29,8 @@ class PlainPlayer(AbstractPlayer):
 
     def _stream_logs(self, stream, line_action):
         for line in stream:
-<<<<<<< HEAD
-=======
             if self.process is None:
                 return
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             line_action(line)
 
     def start(self):
@@ -60,22 +57,6 @@ class PlainPlayer(AbstractPlayer):
         self.process = psutil.Popen(args, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=-1)
 
     def pause(self):
-<<<<<<< HEAD
-        print("Pausing")
-        self.paused = True
-        self.process.suspend()
-
-    def unpause(self, timeout=None):
-        if self.paused:
-            self.process.resume()
-            Timer(timeout, self.pause).start()
-        else:
-            raise RuntimeError('You attempted to unpause a player that was not paused.')
-
-    def destroy(self):
-        if self.process is not None:
-            reap(self.process)
-=======
         # pausing too slow on windows
         if sys.platform == 'win32': return
         if not self.paused:
@@ -97,54 +78,34 @@ class PlainPlayer(AbstractPlayer):
             # which would pollute the output of this script.
             self.process = None
             reap(tmp)
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             self.process = None
         super().destroy()
 
 def reap(process, timeout=3):
     "Tries hard to terminate and ultimately kill all the children of this process."
     def on_terminate(proc):
-<<<<<<< HEAD
-        print("process {} terminated with exit code {}".format(proc.pid, proc.returncode))
-=======
         pass
         # print("process {} terminated with exit code {}".format(proc.pid, proc.returncode))
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
     try:
         procs = process.children(recursive=True)
         # send SIGTERM
         for p in procs:
-<<<<<<< HEAD
-            print("Killing ", p.pid)
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             p.terminate()
         gone, alive = psutil.wait_procs(procs, timeout=timeout, callback=on_terminate)
         if alive:
             # send SIGKILL
             for p in alive:
-<<<<<<< HEAD
-                print("process {} survived SIGTERM; trying SIGKILL" % p.pid)
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
                 p.kill()
             gone, alive = psutil.wait_procs(alive, timeout=timeout, callback=on_terminate)
             if alive:
                 # give up
                 for p in alive:
                     print("process {} survived SIGKILL; giving up" % p.pid)
-
-<<<<<<< HEAD
-        print("Killing ", process.pid)
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
         process.kill()
     except:
         print("Killing failed; assuming process exited early.")
 
-<<<<<<< HEAD
-=======
 def suspend(process):
 
     procs = process.children(recursive=False)
@@ -173,4 +134,3 @@ def resume(process):
     except:
         pass
 
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30

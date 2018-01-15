@@ -55,17 +55,8 @@
                                         <td><input class="input" type="text" value="256" id="memory"></td>
                                     </tr>
                                     <tr>
-<<<<<<< HEAD
-                                        <td>Player CPU percent</td>
-                                        <td><input class="input" type="text" value="20" id="cpu"></td>
-                                    </tr>
-                                    <tr>
-                                        <td>Initial timing pool (ms)</td>
-                                        <td><input class="input" type="text" value="1000" id="pool"></td>
-=======
                                         <td>Initial timing pool (ms)</td>
                                         <td><input class="input" type="text" value="10000" id="pool"></td>
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
                                     </tr>
                                     <tr>
                                         <td>Additional time/turn (ms)</td>
@@ -212,11 +203,7 @@
         <div class="container">
             <div class="content has-text-centered">
                 <p>
-<<<<<<< HEAD
-                    <strong>Battlecode: Escape to Mars</strong> by <a href="http://battlecode.org/">MIT Battlecode</a>. Version 0.9.6.
-=======
                     <strong>Battlecode: Escape to Mars</strong> by <a href="http://battlecode.org/">MIT Battlecode</a>. Version 0.11.1
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
                 </p>
             </div>
         </div>
@@ -326,25 +313,10 @@
             alert_error("Must give at least 100mb of memory.");
             return false;
         } else {
-<<<<<<< HEAD
-            params['player_memory'] = parseInt(params['player_memory'])
-        }
-
-        if (isNaN(params['player_cpu'])) {
-            alert_error("Must give a numeric CPU percentage.");
-            return false;
-        } else if (parseInt(params['player_cpu'] < 10)) {
-            alert_error("Must give at least 10% of CPU.");
-            return false;
-        } else {
-            params['player_cpu'] = parseInt(params['player_cpu'])
-        }
-=======
             params['player_memory'] = parseInt(params['player_memory']);
         }
 
         params['player_cpu'] = 100;
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
         if (isNaN(params['time_pool'])) {
             alert_error("Must give a numeric initial time pool.");
@@ -403,11 +375,7 @@
         var params = {}
         //params['use_viewer'] = document.querySelector('input[name="viewer"]:checked').value;
         params['player_memory'] = document.getElementById('memory').value;
-<<<<<<< HEAD
-        params['player_cpu'] = document.getElementById('cpu').value;
-=======
         params['player_cpu'] = 100;
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
         params['time_pool'] = document.getElementById('pool').value;
         params['time_additional'] = document.getElementById('additional').value;
         params['replay_filename'] = document.getElementById('replay').value;

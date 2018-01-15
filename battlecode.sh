@@ -17,10 +17,6 @@ fi
 
 # Use tput to show different colors in the terminal
 mtput setaf 5
-<<<<<<< HEAD
-echo "$ pip3 install --user cffi tqdm werkzeug ujson psutil"
-=======
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 mtput sgr0
 pip3 install -q --user cffi tqdm werkzeug ujson psutil
 
@@ -31,9 +27,5 @@ if [ $RESULT -ne 0 ]; then
 fi
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export PYTHONPATH="$DIR/battlecode/python:$PYTHONPATH"
-<<<<<<< HEAD
-python3 $DIR/battlecode-manager/simple_cli.py "$@"
-=======
 export NODOCKER=1
 python3 $DIR/battlecode-manager/simple_cli.py "$@"
->>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
