@@ -94,26 +94,12 @@ struct Ptr
 //A smart pointer to bc_GameController type. It's the game controller that we'll use.
 Ptr<bc_GameController> gc;
 
-/// Redundant for now.
-//struct My_Unit
-//{
-//    Ptr<bc_Unit> unit;
-//    uint32_t health;
-//    bc_UnitType type;
-//    Ptr<bc_Location> location;
-//    My_Unit():unit(), health(), type(Worker), location(){};
-//    My_Unit(uint16_t id):unit(bc_GameController_unit(gc, id))
-//    {
-//        health = bc_Unit_health(unit);
-//        type = bc_Unit_unit_type(unit);
-//        location = bc_Unit_location(unit);
-//    }
-//};
-
 bc_Planet my_Planet; //Current planet
 bc_Team my_Team; //Current team
 int map_height[2], map_width[2]; //The size of the Earth map and the Mars map.
 vector<bool> passable[2]; //The current map
+vector<int> connected_square_num; //The size of connected components on Mars.
+int max_connected_num;
 int passable_count[2];
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
@@ -123,6 +109,7 @@ set<int> building_rocket;
 map<int, pair<int,int>> built_rocket; //(id, (worker_num, total_num))
 map<int, int> built_rocket_location;
 map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last_direction);
+set<int> alive_rockets;
 
 bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
 {
@@ -145,6 +132,20 @@ int go(int dir) //The number added to go in the direction dir
     return a[dir];
 }
 
+int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
+{
+    visited[s] = 1;
+    fa[s] = f;
+    int ans = 1;
+    for(int i = 0; i < 8; i++)
+    {
+        if(out_of_bound(s, i)) continue;
+        if(!p[s+go(i)] || visited[s+go(i)]) continue;
+        ans += dfs(f, s+go(i), p, visited, fa);
+    }
+    return ans;
+}
+
 void organize_map_info() //Organize all the map information
 {
     for(int i = 0; i < 2; i++)
@@ -158,6 +159,7 @@ void organize_map_info() //Organize all the map information
             passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
         }
     }
+//    BFS shortest path
     int h = map_height[my_Planet], w = map_width[my_Planet];
     vector<bool>& p = passable[my_Planet];
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
@@ -174,6 +176,21 @@ void organize_map_info() //Organize all the map information
                     shortest_distance[i][j+go(k)] = shortest_distance[i][j]+1;
                     q.push(j+go(k));
                 }
+        }
+    }
+//    DFS connected component on Mars for rockets landing
+    if(my_Planet == Earth)
+    {
+        h = map_height[Mars], w = map_width[Mars];
+        vector<bool>& q = passable[Mars];
+        vector<int> fa(h*w);
+        vector<bool> visited(h*w);
+        connected_square_num.resize(h*w);
+        for(int i = 0; i < h*w; i++) if(q[i])
+        {
+            if(!visited[i]) connected_square_num[i] = dfs(i, i, q, visited, fa);
+            else connected_square_num[i] = connected_square_num[fa[i]];
+            max_connected_num = max(max_connected_num, connected_square_num[i]);
         }
     }
     check_errors("Organizing");
@@ -335,7 +352,6 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
     return 0;
 }
 
-//Not working now
 bool try_javelin(int id, vector<Ptr<bc_Unit>>& nearby_units)
 {
     if(!bc_GameController_is_javelin_ready(gc, id)) return 0;
@@ -415,14 +431,13 @@ void try_load(int id, vector<Ptr<bc_Unit>>& nearby_units)
 
 void launch(int id)
 {
-    while(1)
-    {
-        int x = rand()%map_width[Mars], y = rand()%map_height[Mars];
-        if(!passable[Mars][y*map_width[Mars]+x]) continue;
-        bc_GameController_launch_rocket(gc, id, new_bc_MapLocation(Mars, x, y));
-        built_rocket.erase(id);
-        break;
-    }
+    vector<int> weight(map_width[Mars]*map_height[Mars]);
+    for(int i = 0; i < weight.size(); i++) weight[i] = min(connected_square_num[i], built_rocket[i].second+1);
+    vector<int> tmp(get_random_indices(weight));
+    int x = tmp[0]%map_width[Mars], y = tmp[0]/map_width[Mars];
+    bc_GameController_launch_rocket(gc, id, new_bc_MapLocation(Mars, x, y));
+    built_rocket.erase(id);
+    check_errors("Launching");
 }
 
 bool random_walk(int id, vector<int>& weight)
@@ -651,22 +666,15 @@ int main() {
     my_Planet = bc_GameController_planet(gc);
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<endl;
+
     organize_map_info();
+
     bc_GameController_queue_research(gc, Worker);
-//    if(my_Team == bc_Team(0))
-//    {
-//        bc_GameController_queue_research(gc, Healer);
-//        bc_GameController_queue_research(gc, Knight);
-//        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-//        bc_GameController_queue_research(gc, Rocket);
-//    }
-//    else
-    {
-        bc_GameController_queue_research(gc, Rocket);
-        bc_GameController_queue_research(gc, Healer);
-        bc_GameController_queue_research(gc, Knight);
-        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-    }
+    bc_GameController_queue_research(gc, Rocket);
+    bc_GameController_queue_research(gc, Healer);
+    bc_GameController_queue_research(gc, Knight);
+    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+
     while (true)
     {
         uint32_t round = bc_GameController_round(gc);
@@ -737,7 +745,7 @@ int main() {
                 if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
                     if(!can_build_rocket || karb-15 >= ((len+7)/12-building_rocket.size()-built_rocket.size()) * 100)
                         done = try_replicate(id, v, now_mlocation);
-                if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
+                if(!done && building_rocket.size()+built_rocket.size() < (len+7)/8) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, v, nearby_units); //Stay still to continue repairing
                 if(!dontmove && can_move(id))
@@ -806,6 +814,7 @@ int main() {
             }
             else if(type == Rocket)
             {
+                alive_rockets.insert(id);
                 if(my_Planet == Earth)
                 {
                     if(bc_Unit_structure_is_built(unit))
@@ -821,7 +830,7 @@ int main() {
                         try_load(id, nearby_units);
                         int garrison_num = built_rocket[id].second;
                         if((garrison_num && bc_Unit_health(unit) < 200)
-                           || garrison_num == 8 || round == 749) launch(id);
+                           || garrison_num == min(8, max_connected_num-1) || round == 749) launch(id);
                     }
                     else building_rocket.insert(id);
                 }
@@ -838,6 +847,13 @@ int main() {
                 check_errors("Else's turn");
             }
         }
+        vector<int> to_erase;
+        for(auto rocket:building_rocket) if(!alive_rockets.count(rocket)) to_erase.push_back(rocket);
+        for(auto erase_id:to_erase) building_rocket.erase(erase_id);
+        to_erase.clear();
+        for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
+        for(auto erase_id:to_erase) built_rocket.erase(erase_id), built_rocket_location.erase(erase_id);
+        alive_rockets.clear();
         bc_GameController_next_turn(gc);
     }
 }
