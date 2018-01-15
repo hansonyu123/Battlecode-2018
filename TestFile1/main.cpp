@@ -107,6 +107,7 @@ Ptr<bc_PlanetMap> planetmap[2];
 
 void push_new_units()
 {
+    cout<<my_new_units.size()<<endl;
     for(auto p:my_new_units) my_units.insert(p);
     my_new_units.clear();
 }
@@ -183,7 +184,6 @@ int main() {
             }
             my_Planet = bc_GameController_planet(gc);
         }
-        cout<<my_units.size()<<endl;
         fflush(stdout);
         for (auto p:my_units) {
             Ptr<bc_Unit> unit = p.second.unit;

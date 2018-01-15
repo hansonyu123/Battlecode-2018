@@ -144,7 +144,6 @@ int go(int dir) //The number added to go in the direction dir
 
 void organize_map_info() //Organize all the map information
 {
-    cout<<"Start organizing"<<endl;
     for(int i = 0; i < 2; i++)
     {
         map_height[i] = bc_PlanetMap_height_get(planetmap[i]);
@@ -159,7 +158,6 @@ void organize_map_info() //Organize all the map information
     int h = map_height[my_Planet], w = map_width[my_Planet];
     vector<bool>& p = passable[my_Planet];
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
-    cout<<"Start BFS"<<endl;
     for(int i = 0; i < h*w; i++) // BFS.
     {
         if(!p[i]) continue;
@@ -175,12 +173,7 @@ void organize_map_info() //Organize all the map information
                 }
         }
     }
-    for(int i = 0; i < h*w; i++) //For debug uses.
-    {
-        cout<<shortest_distance[2*w+2][i]<<' ';
-        if(!(i+1)%w) cout<<endl;
-    }
-    cout<<"End organizing"<<endl;
+    check_errors("Organizing");
 }
 
 bool is_robot(bc_UnitType s) //Check if a unit is a robot.
@@ -314,7 +307,8 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
     random_shuffle(tmp.begin(), tmp.end());
     for(int i = 0; i < nearby_units.size(); i++)
     {
-        if(nearby_units[tmp[i]] && bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
+        if(!nearby_units[tmp[i]]) continue;
+        if(bc_Unit_team(nearby_units[tmp[i]]) == my_Team) continue;
         if(bc_GameController_can_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]])))
         {
             bc_GameController_attack(gc, id, bc_Unit_id(nearby_units[tmp[i]]));
@@ -347,6 +341,7 @@ bool try_heal(int id, vector<Ptr<bc_Unit>>& nearby_units)
     vector<int> weight(nearby_units.size());
     for(int i = 0; i < nearby_units.size(); i++)
     {
+        if(!nearby_units[i]) continue;
         if(bc_Unit_team(nearby_units[i]) != my_Team) continue;
         bc_UnitType type = bc_Unit_unit_type(nearby_units[i]);
         if(!is_robot(type)) continue;
@@ -373,6 +368,7 @@ void try_load(int id, vector<Ptr<bc_Unit>>& nearby_units)
 {
     for(int i = 0; i < nearby_units.size(); i++)
     {
+        if(!nearby_units[i]) continue;
         int id2 = bc_Unit_id(nearby_units[i]);
         if(bc_GameController_can_load(gc, id, id2)) bc_GameController_load(gc, id, id2);
     }
@@ -616,11 +612,10 @@ int main() {
         uint32_t round = bc_GameController_round(gc);
         printf("Round: %d\n", round);
         int karb = bc_GameController_karbonite(gc);
-        cout<<karb<<endl;//For debug
+        cout<<"Karbonite: "<<karb<<endl;//For debug
 
         Ptr<bc_ResearchInfo> research_info(bc_GameController_research_info(gc));
         if(bc_ResearchInfo_get_level(research_info, Rocket)) can_build_rocket = 1;
-        cout<<can_build_rocket<<endl;
 
         Ptr<bc_VecUnit> units(bc_GameController_my_units(gc));
         int len = bc_VecUnit_len(units);
@@ -628,6 +623,8 @@ int main() {
         for(int i = 0; i < len; i++)
         {
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
+            Ptr<bc_Location> tmp(bc_Unit_location(unit));
+            if(!bc_Location_is_on_map(tmp)) continue;
             typecount[bc_Unit_unit_type(unit)]++;
         }
 
@@ -650,7 +647,6 @@ int main() {
         random_shuffle(tmp.begin(), tmp.end());
         for(int ii = 0; ii < len; ii++)
         {
-            if(round == 150) cout<<"INITIALIZE"<<endl;
             int i = tmp[ii];
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
             int id = bc_Unit_id(unit);
@@ -668,7 +664,6 @@ int main() {
             vector<Ptr<bc_Unit>> nearby_units(vmap_len); //Save the units within attack/ability range
             for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-            if(round == 150) cout<<"TYPE "<<type<<" START"<<endl;
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -698,15 +693,17 @@ int main() {
                     walk_weight.push_back(20);
                     random_walk(id, walk_weight);
                 }
+                check_errors("Worker's turn");
             }
             else if(type == Factory)
             {
                 if(!bc_Unit_structure_is_built(unit)) continue;
-                if(can_build_rocket && karb-20 < ((len+7)/12-building_rocket.size())*100) continue;
                 try_unload(id);
+                if(can_build_rocket && karb-20 < ((len+7)/12-building_rocket.size())*100 && typecount[0]) continue;
                 vector<int> weight({0,1,3,3,1});
                 if(!typecount[0]) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 try_produce(id, weight);
+                check_errors("Factory's turn");
             }
             else if(type == Knight)
             {
@@ -725,6 +722,7 @@ int main() {
                         nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
                     try_attack(id, nearby_units);
                 }
+                check_errors("Knight's turn");
             }
             else if(type == Healer)
             {
@@ -743,6 +741,7 @@ int main() {
                     walk_weight.push_back(20);
                     if(random_walk(id, walk_weight)) try_heal(id, nearby_units);
                 }
+                check_errors("Healer's turn");
             }
             else if(type == Rocket)
             {
@@ -762,11 +761,13 @@ int main() {
                 {
                     try_unload(id);
                 }
+                check_errors("Rocket's turn");
             }
             else
             {
                 try_attack(id, nearby_units);
                 random_walk(id);
+                check_errors("Else's turn");
             }
         }
         bc_GameController_next_turn(gc);
