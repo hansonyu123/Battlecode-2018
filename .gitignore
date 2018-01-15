@@ -1,4 +1,10 @@
 working_dir
+<<<<<<< HEAD
 
 *.o
 *.bc18
+=======
+replay*
+viewer_latest*
+viewer_currentInstall.json
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30

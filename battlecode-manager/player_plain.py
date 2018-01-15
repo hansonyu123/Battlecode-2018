@@ -29,6 +29,11 @@ class PlainPlayer(AbstractPlayer):
 
     def _stream_logs(self, stream, line_action):
         for line in stream:
+<<<<<<< HEAD
+=======
+            if self.process is None:
+                return
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             line_action(line)
 
     def start(self):
@@ -55,6 +60,7 @@ class PlainPlayer(AbstractPlayer):
         self.process = psutil.Popen(args, env=env, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=-1)
 
     def pause(self):
+<<<<<<< HEAD
         print("Pausing")
         self.paused = True
         self.process.suspend()
@@ -69,25 +75,59 @@ class PlainPlayer(AbstractPlayer):
     def destroy(self):
         if self.process is not None:
             reap(self.process)
+=======
+        # pausing too slow on windows
+        if sys.platform == 'win32': return
+        if not self.paused:
+            self.paused = True
+            suspend(self.process)
+
+    def unpause(self, timeout=None):
+        # pausing too slow on windows
+        if sys.platform == 'win32': return
+        if self.paused:
+            resume(self.process)
+            self.paused = False
+
+    def destroy(self):
+        if self.process is not None:
+            tmp = self.process
+            # This will signal to the log thread that everything is going to be shut down
+            # and ignore any future messages. In particular bash may log something like 'Terminated: <PID>'
+            # which would pollute the output of this script.
+            self.process = None
+            reap(tmp)
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             self.process = None
         super().destroy()
 
 def reap(process, timeout=3):
     "Tries hard to terminate and ultimately kill all the children of this process."
     def on_terminate(proc):
+<<<<<<< HEAD
         print("process {} terminated with exit code {}".format(proc.pid, proc.returncode))
+=======
+        pass
+        # print("process {} terminated with exit code {}".format(proc.pid, proc.returncode))
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
 
     try:
         procs = process.children(recursive=True)
         # send SIGTERM
         for p in procs:
+<<<<<<< HEAD
             print("Killing ", p.pid)
+=======
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
             p.terminate()
         gone, alive = psutil.wait_procs(procs, timeout=timeout, callback=on_terminate)
         if alive:
             # send SIGKILL
             for p in alive:
+<<<<<<< HEAD
                 print("process {} survived SIGTERM; trying SIGKILL" % p.pid)
+=======
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
                 p.kill()
             gone, alive = psutil.wait_procs(alive, timeout=timeout, callback=on_terminate)
             if alive:
@@ -95,8 +135,42 @@ def reap(process, timeout=3):
                 for p in alive:
                     print("process {} survived SIGKILL; giving up" % p.pid)
 
+<<<<<<< HEAD
         print("Killing ", process.pid)
+=======
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
         process.kill()
     except:
         print("Killing failed; assuming process exited early.")
 
+<<<<<<< HEAD
+=======
+def suspend(process):
+
+    procs = process.children(recursive=False)
+    # to enterprising players reading this code:
+    # yes, it is possible to escape the pausing using e.g. `nohup` when running without docker.
+    # however, that won't work while running inside docker. Sorry.
+    for p in procs:
+        try:
+            p.suspend()
+        except:
+            pass
+    try:
+        p.suspend()
+    except:
+        pass
+
+def resume(process):
+    procs = process.children(recursive=True)
+    for p in procs:
+        try:
+            p.resume()
+        except:
+            pass
+    try:
+        p.resume()
+    except:
+        pass
+
+>>>>>>> 6b0b8df56ef8ebdba88911a44d7374befbda1e30
