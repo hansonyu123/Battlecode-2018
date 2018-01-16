@@ -102,6 +102,7 @@ def reap(process, timeout=3):
                 # give up
                 for p in alive:
                     print("process {} survived SIGKILL; giving up" % p.pid)
+
         process.kill()
     except:
         print("Killing failed; assuming process exited early.")

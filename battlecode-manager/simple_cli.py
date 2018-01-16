@@ -45,6 +45,7 @@ def run_game(map_path, player1dir, player2dir, replay_dir, docker, terminal_view
         winner = cli.run_game(game, sandboxes, args, sock_file)
     finally:
         cli.cleanup(sandboxes, args, sock_file)
+
     print("Winner is player " + str(1 if winner == 'player1' else 2))
 
 def get_maps(map_directory):

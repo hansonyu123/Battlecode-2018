@@ -58,7 +58,6 @@ def prepare_working_directory(working_dir):
 
 
 def run_game(game, dockers, args, sock_file, scrimmage=False):
-
     '''
     This contains the logic that needs to be cleaned up at the end of a game
     If there is something that needs to be cleaned up add it in the try catch

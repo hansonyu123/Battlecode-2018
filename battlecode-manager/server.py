@@ -473,6 +473,7 @@ def create_receive_handler(game: Game, dockers, use_docker: bool,
             while not self.game.started and not self.game.game_over:
                 # Spin while waiting for game to start
                 time.sleep(0.05)
+
             logging.info("Client %s: Game started", self.client_id)
 
             my_sandbox = dockers[self.client_id]
@@ -489,6 +490,7 @@ def create_receive_handler(game: Game, dockers, use_docker: bool,
                     self.game.end_turn()
                     self.request.close()
                     return
+
                 logging.debug("Client %s: Started turn", self.client_id)
 
                 if self.game.initialized > 3:
