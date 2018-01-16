@@ -248,6 +248,7 @@ bool try_harvest(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& n
 
 bool try_build(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units)
 {
+    assert(v.size() == nearby_units.size());
     for(int i = 0; i < v.size(); i++)
         if(nearby_units[i] && !is_robot(bc_Unit_unit_type(nearby_units[i]))
             && bc_GameController_can_build(gc, id, bc_Unit_id(nearby_units[i])))
@@ -666,7 +667,7 @@ Ptr<bc_MapLocation> get_mlocation(Ptr<bc_Unit>& unit)
 }
 
 void update_unit_location(int id, Ptr<bc_Unit>& unit, Ptr<bc_MapLocation>& now_mlocation, unsigned int dist,
-                          vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>> nearby_units)
+                          vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nearby_units)
 {
     unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);//Remember to Update
     if(!now_mlocation) return;
@@ -678,6 +679,8 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, Ptr<bc_MapLocation>& now_m
     nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
     for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
         nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+    assert(v.size() == vmap_len);
+    assert(nearby_units.size() == vmap_len);
 }
 
 int main() {
@@ -758,9 +761,11 @@ int main() {
             vector<Ptr<bc_Unit>> nearby_units(vmap_len); //Save the units within attack/ability range
             for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+            assert(v.size() == nearby_units.size());
             if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4)
                 if(try_walk_to_rocket(id, type, now_mlocation)) //Go to rocket first
                     update_unit_location(id, unit, now_mlocation, dist, v, nearby_units);
+            assert(v.size() == nearby_units.size());
 //            Here is what a worker will do
             if(type == Worker)
             {
