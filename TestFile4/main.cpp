@@ -56,7 +56,6 @@ inline void release(bc_VecUnit *units){delete_bc_VecUnit(units);}
 inline void release(bc_VecMapLocation *vecmaplocation){delete_bc_VecMapLocation(vecmaplocation);}
 inline void release(bc_ResearchInfo *research_info){delete_bc_ResearchInfo(research_info);}
 inline void release(bc_VecUnitID *units){delete_bc_VecUnitID(units);}
-inline void release(bc_OrbitPattern *orbitpattern){delete_bc_OrbitPattern(orbitpattern);}
 
 //Smart pointer. PLEASE ALWAYS USE SMART POINTER
 //This prevents memory leaks and saves time :)
@@ -111,7 +110,6 @@ map<int, pair<int,int>> built_rocket; //(id, (worker_num, total_num))
 map<int, int> built_rocket_location;
 map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last_direction);
 set<int> alive_rockets;
-Ptr<bc_OrbitPattern> orbit_pattern;
 
 bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
 {
@@ -336,10 +334,10 @@ bool try_attack(int id, vector<Ptr<bc_Unit>>& nearby_units)
         if(type == Worker) weight[i] = 1;
         else if(type == Knight) weight[i] = 100;
         else if(type == Mage) weight[i] = 10000;
-        else if(type == Ranger) weight[i] = 2000;
-        else if(type == Healer) weight[i] = 500;
+        else if(type == Ranger) weight[i] = 1000;
+        else if(type == Healer) weight[i] = 1000;
         else if(type == Factory) weight[i] = 10000;
-        else if(type == Rocket) weight[i] = 700;
+        else if(type == Rocket) weight[i] = 1000;
     }
     vector<int> tmp(get_random_indices(weight));
     for(int i = 0; i < tmp.size(); i++)
@@ -701,19 +699,13 @@ int main() {
     cout<<"I am team "<<my_Team<<endl;
 
     organize_map_info();
-    orbit_pattern = bc_GameController_orbit_pattern(gc);
 
     bc_GameController_queue_research(gc, Worker);
     bc_GameController_queue_research(gc, Rocket);
-    bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Knight);
     for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Ranger);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+
     while (true)
     {
         uint32_t round = bc_GameController_round(gc);
@@ -869,8 +861,7 @@ int main() {
                         try_load(id, nearby_units);
                         int garrison_num = built_rocket[id].second;
                         if((garrison_num && bc_Unit_health(unit) < 200)
-                           || (garrison_num == min(8, max_connected_num-1) && bc_OrbitPattern_duration(orbit_pattern, round) <= bc_OrbitPattern_duration(orbit_pattern, round+1))
-                           || round == 749) launch(id);
+                           || garrison_num == min(8, max_connected_num-1) || round == 749) launch(id);
                     }
                     else building_rocket.insert(id);
                 }
