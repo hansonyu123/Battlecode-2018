@@ -665,6 +665,21 @@ Ptr<bc_MapLocation> get_mlocation(Ptr<bc_Unit>& unit)
     return bc_Location_map_location(tmp);
 }
 
+void update_unit_location(int id, Ptr<bc_Unit>& unit, Ptr<bc_MapLocation>& now_mlocation, unsigned int dist,
+                          vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>> nearby_units)
+{
+    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);//Remember to Update
+    if(!now_mlocation) return;
+    //Reload map
+    Ptr<bc_VecMapLocation> vmap(bc_GameController_all_locations_within(gc, now_mlocation, dist));
+    int vmap_len = bc_VecMapLocation_len(vmap);
+    v.clear(); //Save the squares within attack/ability range
+    for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
+    nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
+    for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
+        nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -745,18 +760,7 @@ int main() {
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
             if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4)
                 if(try_walk_to_rocket(id, type, now_mlocation)) //Go to rocket first
-                {
-                    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);//Remember to Update
-                    assert(bc_Unit_id(unit) == id);
-                    //Reload map
-                    vmap = bc_GameController_all_locations_within(gc, now_mlocation, dist);
-                    vmap_len = bc_VecMapLocation_len(vmap);
-                    v.clear(); //Save the squares within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
-                    nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
-                        nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-                }
+                    update_unit_location(id, unit, now_mlocation, dist, v, nearby_units);
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -805,15 +809,7 @@ int main() {
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
                 else if(walk_to_enemy(id, now_mlocation, enemy_location))
                 {
-                    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);
-                    //Reload map
-                    vmap = bc_GameController_all_locations_within(gc, now_mlocation, 10);
-                    vmap_len = bc_VecMapLocation_len(vmap);
-                    v.clear(); //Save the squares within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
-                    nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
-                        nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+                    update_unit_location(id, unit, now_mlocation, dist, v, nearby_units);
                     try_javelin(id, nearby_units);
                     try_attack(id, nearby_units);
                 }
@@ -835,15 +831,7 @@ int main() {
                     walk_weight.push_back(20);
                     if(random_walk(id, walk_weight))
                     {
-                        unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);
-                        //Reload map
-                        vmap = bc_GameController_all_locations_within(gc, now_mlocation, 30);
-                        vmap_len = bc_VecMapLocation_len(vmap);
-                        v.clear(); //Save the squares within attack/ability range
-                        for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
-                        nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
-                        for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
-                            nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
+                        update_unit_location(id, unit, now_mlocation, dist, v, nearby_units);
                         try_heal(id, nearby_units);
                     }
                 }
