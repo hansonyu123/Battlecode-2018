@@ -79,6 +79,8 @@ int main() {
                 printf("%s\n", bc_Location_debug(now_location));
                 bc_GameController_move_robot(gc, id, North);
                 delete_bc_Location(now_location);
+                delete_bc_Unit(unit);
+                unit = bc_GameController_unit(gc, id);
                 now_location = bc_Unit_location(unit);
                 printf("%s\n", bc_Location_debug(now_location));
             }

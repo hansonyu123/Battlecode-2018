@@ -199,6 +199,7 @@ int main() {
                 {
                     bc_GameController_replicate(gc, id, Southeast);
                     check_errors("REPLICATING");
+                    unit = bc_GameController_unit(gc,id);
                     Ptr<bc_Location> now_location(bc_Unit_location(unit));
                     check_errors("LOCATING");
                     Ptr<bc_MapLocation> now_maplocation(bc_Location_map_location(now_location));

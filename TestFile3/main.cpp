@@ -56,6 +56,7 @@ inline void release(bc_VecUnit *units){delete_bc_VecUnit(units);}
 inline void release(bc_VecMapLocation *vecmaplocation){delete_bc_VecMapLocation(vecmaplocation);}
 inline void release(bc_ResearchInfo *research_info){delete_bc_ResearchInfo(research_info);}
 inline void release(bc_VecUnitID *units){delete_bc_VecUnitID(units);}
+inline void release(bc_OrbitPattern *orbit_pattern){delete_bc_OrbitPattern(orbit_pattern);}
 
 //Smart pointer. PLEASE ALWAYS USE SMART POINTER
 //This prevents memory leaks and saves time :)
@@ -653,18 +654,6 @@ bool try_walk_to_rocket(int id, bc_UnitType type, Ptr<bc_MapLocation> now_mlocat
     return walk_to(id, now_mlocation, new_bc_MapLocation(my_Planet, dest_loc%map_width[my_Planet], dest_loc/map_height[my_Planet]));
 }
 
-Ptr<bc_MapLocation> get_mlocation(Ptr<bc_Unit>& unit)
-{
-    Ptr<bc_Location> tmp(bc_Unit_location(unit));
-    if(!bc_Location_is_on_map(tmp))
-    {
-        check_errors("Getting Mlocation");
-        return Ptr<bc_MapLocation>();
-    }
-    check_errors("Getting Mlocation");
-    return bc_Location_map_location(tmp);
-}
-
 int main() {
     printf("Meow Starting\n");
 
@@ -678,6 +667,9 @@ int main() {
     my_Planet = bc_GameController_planet(gc);
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<endl;
+
+    Ptr<bc_OrbitPattern> orbitpattern(bc_GameController_orbit_pattern(gc));
+    cout<<bc_OrbitPattern_amplitude_get(orbitpattern)<<' '<<bc_OrbitPattern_center_get(orbitpattern)<<endl;
 
     organize_map_info();
 
@@ -695,7 +687,7 @@ int main() {
         cout<<"Karbonite: "<<karb<<endl;//For debug
 
         Ptr<bc_ResearchInfo> research_info(bc_GameController_research_info(gc));
-        if(bc_ResearchInfo_get_level(research_info, Rocket) && my_Planet == Earth) can_build_rocket = 1;
+        if(bc_ResearchInfo_get_level(research_info, Rocket) && my_Planet == Earth && round >= 400) can_build_rocket = 1;
 
         Ptr<bc_VecUnit> units(bc_GameController_my_units(gc));
         int len = bc_VecUnit_len(units);
@@ -731,8 +723,9 @@ int main() {
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
             int id = bc_Unit_id(unit);
             bc_UnitType type = bc_Unit_unit_type(unit);
-            Ptr<bc_MapLocation> now_mlocation(get_mlocation(unit));
-            if(!now_mlocation) continue;
+            Ptr<bc_Location> tmp(bc_Unit_location(unit));
+            if(!bc_Location_is_on_map(tmp)) continue;
+            Ptr<bc_MapLocation> now_mlocation(bc_Location_map_location(tmp));
 //            Ranger's active ability is infinity, so we have to be careful by taking min with 50.
             unsigned int dist = 2;
             if(is_robot(type)) dist = min(50u, max(bc_Unit_ability_range(unit), bc_Unit_attack_range(unit)));
@@ -743,20 +736,7 @@ int main() {
             vector<Ptr<bc_Unit>> nearby_units(vmap_len); //Save the units within attack/ability range
             for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-            if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4)
-                if(try_walk_to_rocket(id, type, now_mlocation)) //Go to rocket first
-                {
-                    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);//Remember to Update
-                    assert(bc_Unit_id(unit) == id);
-                    //Reload map
-                    vmap = bc_GameController_all_locations_within(gc, now_mlocation, dist);
-                    vmap_len = bc_VecMapLocation_len(vmap);
-                    v.clear(); //Save the squares within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
-                    nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
-                    for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
-                        nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-                }
+            if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4) try_walk_to_rocket(id, type, now_mlocation);//Go to rocket first
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -793,8 +773,9 @@ int main() {
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
                 if(can_build_rocket && karb-20 < ((len+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
-                vector<int> weight({0,1,3,3,1});
-                if(!typecount[0]) for(int i = 0; i < 5; i++) weight[i] = ((i && typecount[i])?0:1);
+                vector<int> weight({0,1,0,0,0});
+                if(round >= 400) weight[2] = weight[3] = 3, weight[4] = 1;
+                if(!typecount[0]) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 try_produce(id, weight);
                 check_errors("Factory's turn");
             }
@@ -805,7 +786,6 @@ int main() {
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
                 else if(walk_to_enemy(id, now_mlocation, enemy_location))
                 {
-                    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);
                     //Reload map
                     vmap = bc_GameController_all_locations_within(gc, now_mlocation, 10);
                     vmap_len = bc_VecMapLocation_len(vmap);
@@ -814,7 +794,6 @@ int main() {
                     nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
                     for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                         nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-                    try_javelin(id, nearby_units);
                     try_attack(id, nearby_units);
                 }
                 check_errors("Knight's turn");
@@ -825,6 +804,7 @@ int main() {
                 if(can_move(id))
                 {
                     auto f = healer_gravity_force(now_mlocation, v, nearby_units);
+                    //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
                     vector<int> walk_weight;
                     for(int i = 0; i < 8; i++)
                     {
@@ -833,19 +813,7 @@ int main() {
                         walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
                     }
                     walk_weight.push_back(20);
-                    if(random_walk(id, walk_weight))
-                    {
-                        unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);
-                        //Reload map
-                        vmap = bc_GameController_all_locations_within(gc, now_mlocation, 30);
-                        vmap_len = bc_VecMapLocation_len(vmap);
-                        v.clear(); //Save the squares within attack/ability range
-                        for(int i = 0; i < vmap_len; i++) v.push_back(bc_VecMapLocation_index(vmap, i));
-                        nearby_units.clear(); nearby_units.resize(vmap_len);//Save the units within attack/ability range
-                        for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
-                            nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-                        try_heal(id, nearby_units);
-                    }
+                    if(random_walk(id, walk_weight)) try_heal(id, nearby_units);
                 }
                 check_errors("Healer's turn");
             }
@@ -866,8 +834,7 @@ int main() {
                         }
                         try_load(id, nearby_units);
                         int garrison_num = built_rocket[id].second;
-                        if((garrison_num && bc_Unit_health(unit) < 200)
-                           || garrison_num == min(8, max_connected_num-1) || round == 749) launch(id);
+                        if(round == 749) launch(id);
                     }
                     else building_rocket.insert(id);
                 }
