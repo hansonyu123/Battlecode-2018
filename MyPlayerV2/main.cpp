@@ -124,6 +124,7 @@ vector<vector<pair<int,int>>> chunk_edge; //The connection between chunks
 vector<int> chunk_size;
 vector<int> chunk_karbonite;
 vector<int> chunk_rep; //A representative of a chunk. Just for estimation.
+int target_rocket_id[65536];
 
 
 int correspoinding_point(int loc, int sym)
@@ -452,15 +453,18 @@ bool try_build(int id, vector<Ptr<bc_MapLocation>>& v, vector<Ptr<bc_Unit>>& nea
     return 0;
 }
 
-bool try_replicate(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation)
+pair<bool,int> try_replicate(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation)
 {
     for(int i = 0; i < v.size(); i++)
         if(bc_GameController_can_replicate(gc, id, bc_MapLocation_direction_to(now_mlocation, v[i])))
         {
             bc_GameController_replicate(gc, id, bc_MapLocation_direction_to(now_mlocation, v[i]));
-            return 1;
+            assert(bc_GameController_has_unit_at_location(gc, v[i]));
+            Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, v[i]));
+            int new_id = bc_Unit_id(tmp);
+            return make_pair(1,new_id);
         }
-    return 0;
+    return make_pair(0,0);
 }
 
 bool try_blueprint(int id, vector<Ptr<bc_MapLocation>>& v, Ptr<bc_MapLocation> now_mlocation, bc_UnitType structure)
@@ -735,6 +739,14 @@ bool walk_to_enemy(int id, Ptr<bc_MapLocation>& now_mlocation, vector<Ptr<bc_Map
     return walk_to(id, now_mlocation, new_bc_MapLocation(my_Planet, nearest_x, nearest_y));
 }
 
+bool walk_to_opposite(int id, Ptr<bc_MapLocation>& now_mlocation, int start_loc)
+{
+    if(!bc_GameController_is_move_ready(gc, id)) return 0;
+    int dest_loc = correspoinding_point(start_loc, symmetry);
+    Ptr<bc_MapLocation> tmpmloc(new_bc_MapLocation(my_Planet, dest_loc%map_width[my_Planet], dest_loc/map_width[my_Planet]));
+    return walk_to(id, now_mlocation, tmpmloc);
+}
+
 //This simulates the attraction and the repulsion by all other units with gravity force
 pair<double, double> worker_gravity_force(Ptr<bc_MapLocation> now_mlocation, vector<Ptr<bc_MapLocation>>& whole_map, vector<Ptr<bc_Unit>>& all_units)
 {
@@ -830,17 +842,23 @@ bool try_walk_to_rocket(int id, bc_UnitType type, Ptr<bc_MapLocation> now_mlocat
     if(!can_move(id)) return 0;
     int dest_loc = -1;
     unsigned int nearest_dist = -1;
-    int now_x = bc_MapLocation_x_get(now_mlocation);
-    int now_y = bc_MapLocation_y_get(now_mlocation);
-    int now_loc = now_y*map_width[my_Planet] + now_x;
-    for(auto rocket:built_rocket)
+    if(target_rocket_id[id] != -1 && built_rocket.count(target_rocket_id[id]) && (type != Worker || !built_rocket[target_rocket_id[id]].first) && built_rocket[target_rocket_id[id]].second < 8)
+        dest_loc = built_rocket_location[target_rocket_id[id]];
+    else
     {
-        if(type == Worker && rocket.second.first) continue;
-        if(rocket.second.second == 8) continue;
-        if(shortest_distance[now_loc][built_rocket_location[rocket.first]] < nearest_dist)
+        int now_x = bc_MapLocation_x_get(now_mlocation);
+        int now_y = bc_MapLocation_y_get(now_mlocation);
+        int now_loc = now_y*map_width[my_Planet] + now_x;
+        for(auto rocket:built_rocket)
         {
-            nearest_dist = shortest_distance[now_loc][built_rocket_location[rocket.first]];
-            dest_loc = built_rocket_location[rocket.first];
+            if(type == Worker && rocket.second.first) continue;
+            if(rocket.second.second == 8) continue;
+            if(shortest_distance[now_loc][built_rocket_location[rocket.first]] < nearest_dist)
+            {
+                nearest_dist = shortest_distance[now_loc][built_rocket_location[rocket.first]];
+                dest_loc = built_rocket_location[rocket.first];
+                target_rocket_id[id] = rocket.first;
+            }
         }
     }
     if(dest_loc == -1) return 0;
@@ -878,6 +896,7 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, Ptr<bc_MapLocation>& now_m
 
 int main() {
     printf("Meow Starting\n");
+    int print_round = 1001;
 
     srand(7122);
     gen.seed(7122);
@@ -895,17 +914,21 @@ int main() {
     orbit_pattern = bc_GameController_orbit_pattern(gc);
     cout<<"I guess this map has a symmetry of "<<symmetry<<endl;
 
+    int start_loc = -1;
+
     bc_GameController_queue_research(gc, Worker);
-    bc_GameController_queue_research(gc, Rocket);
     bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Knight);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+    bc_GameController_queue_research(gc, Knight);
+    bc_GameController_queue_research(gc, Knight);
     bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Knight);
+    bc_GameController_queue_research(gc, Rocket);
+    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
     bc_GameController_queue_research(gc, Ranger);
     for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+
+    fill(target_rocket_id, target_rocket_id+65536, -1);
     while (true)
     {
         uint32_t round = bc_GameController_round(gc);
@@ -946,6 +969,7 @@ int main() {
         random_shuffle(tmp.begin(), tmp.end());
         for(int ii = 0; ii < len; ii++)
         {
+            if(round >= print_round) cout<<"INIT"<<endl;
             int i = tmp[ii];
             Ptr<bc_Unit> unit(bc_VecUnit_index(units, i));
             int id = bc_Unit_id(unit);
@@ -955,6 +979,9 @@ int main() {
 //            Ranger's active ability is infinity, so we have to be careful by taking min with 50.
             unsigned int dist = 2;
             if(is_robot(type)) dist = min(50u, max(bc_Unit_ability_range(unit), bc_Unit_attack_range(unit)));
+            if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4 )
+                if(try_walk_to_rocket(id, type, now_mlocation)) //Go to rocket first
+                    unit = bc_GameController_unit(gc, id), now_mlocation = get_mlocation(unit);
             Ptr<bc_VecMapLocation> vmap(bc_GameController_all_locations_within(gc, now_mlocation, dist));
             int vmap_len = bc_VecMapLocation_len(vmap);
             vector<Ptr<bc_MapLocation>> v; //Save the squares within attack/ability range
@@ -962,23 +989,26 @@ int main() {
             vector<Ptr<bc_Unit>> nearby_units(vmap_len); //Save the units within attack/ability range
             for(int i = 0; i < vmap_len; i++) if(bc_GameController_has_unit_at_location(gc, v[i]))
                 nearby_units[i] = bc_GameController_sense_unit_at_location(gc, v[i]);
-            assert(v.size() == nearby_units.size());
-            if(my_Planet == Earth && is_robot(type) && typecount[type] >= 4)
-                if(try_walk_to_rocket(id, type, now_mlocation)) //Go to rocket first
-                    update_unit_location(id, unit, now_mlocation, dist, v, nearby_units);
-            assert(v.size() == nearby_units.size());
 //            Here is what a worker will do
             if(type == Worker)
             {
 //                A worker tries stuff in this order:
 //                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
 //                TODO: Make every attempt into a function, and change the order based on some other numbers
+                if(round >= print_round) cout<<"Worker"<<endl;
+                if(start_loc == -1) start_loc = bc_MapLocation_x_get(now_mlocation)+bc_MapLocation_y_get(now_mlocation)*map_width[my_Planet];
                 bool done = 0, dontmove = 0;
+                if(round == 1) done = dontmove = try_blueprint(id, v, now_mlocation, Factory);
                 if(!done) done = dontmove = try_harvest(id, v, nearby_units, now_mlocation); //Stay still to continue harvesting
                 if(!done) done = dontmove = try_build(id, v, nearby_units); //Stay still to continue building
                 if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
                     if(!can_build_rocket || karb-15 >= ((len+7)/12-building_rocket.size()-built_rocket.size()) * 100)
-                        done = try_replicate(id, v, now_mlocation);
+                    {
+                        auto tmprep = try_replicate(id, v, now_mlocation);
+                        done = tmprep.first;
+                        id = tmprep.second;
+                    }
+
                 if(!done && building_rocket.size()+built_rocket.size() < (len+7)/8) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, v, now_mlocation, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, v, nearby_units); //Stay still to continue repairing
@@ -1000,6 +1030,7 @@ int main() {
             }
             else if(type == Factory)
             {
+                if(round >= print_round) cout<<"Factory"<<endl;
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 try_unload(id);
                 if(can_build_rocket && karb-20 < ((len+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
@@ -1010,6 +1041,7 @@ int main() {
             }
             else if(type == Knight)
             {
+                if(round >= print_round) cout<<"Knight"<<endl;
                 bool done = 0;
                 try_javelin(id, nearby_units);
                 if(try_attack(id, nearby_units)) random_walk(id), not_free.erase(id);
@@ -1023,6 +1055,7 @@ int main() {
             }
             else if(type == Healer)
             {
+                if(round >= print_round) cout<<"Healer"<<endl;
                 try_heal(id, nearby_units);
                 if(can_move(id))
                 {
@@ -1045,6 +1078,7 @@ int main() {
             }
             else if(type == Rocket)
             {
+                if(round >= print_round) cout<<"Rocket"<<endl;
                 alive_rockets.insert(id);
                 if(my_Planet == Earth)
                 {
@@ -1074,8 +1108,10 @@ int main() {
             }
             else
             {
+                if(round >= print_round) cout<<"Else"<<endl;
                 try_attack(id, nearby_units);
-                random_walk(id);
+                if(my_Planet == Earth) walk_to_opposite(id, now_mlocation, start_loc);
+                else random_walk(id);
                 check_errors("Else's turn");
             }
         }
@@ -1086,6 +1122,7 @@ int main() {
         for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
         for(auto erase_id:to_erase) built_rocket.erase(erase_id), built_rocket_location.erase(erase_id);
         alive_rockets.clear();
+        if(!round%100) not_free.clear();
         bc_GameController_next_turn(gc);
     }
 }
