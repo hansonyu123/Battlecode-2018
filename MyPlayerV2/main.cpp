@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <random>
 #include <set>
+#include <bitset>
+#include <iomanip>
 using namespace std;
 
 
@@ -99,10 +101,12 @@ bc_Planet my_Planet; //Current planet
 bc_Team my_Team; //Current team
 int map_height[2], map_width[2]; //The size of the Earth map and the Mars map.
 vector<bool> passable[2]; //The current map
+int init_karbonite[2500];
 vector<int> connected_square_num; //The size of connected components on Mars.
 int max_connected_num;
 int passable_count[2];
 unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
+unsigned int distance_to_wall[2500]; //Distance to impassable squares/the bound of the map.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 default_random_engine gen; //C++11 random engine
 bool can_build_rocket;
@@ -113,6 +117,14 @@ map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last
 set<int> alive_rockets;
 Ptr<bc_OrbitPattern> orbit_pattern;
 int symmetry; //The guessed symmetry of this game. 0: identity(impossible). 1: reflection about y. 2: reflection about x. 3: rotation
+//Cut the map into chunks
+int chunk_num;
+int chunk_label[2500]; //The number of chunk a square belongs to
+vector<vector<pair<int,int>>> chunk_edge; //The connection between chunks
+vector<int> chunk_size;
+vector<int> chunk_karbonite;
+vector<int> chunk_rep; //A representative of a chunk. Just for estimation.
+
 
 int correspoinding_point(int loc, int sym)
 {
@@ -157,6 +169,25 @@ int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
     return ans;
 }
 
+//Disjoint set
+int _ds__p[2500];
+int _ds__sz[2500];
+
+inline void _ds__init(int n){for(int i = 0; i < n; i++) _ds__p[i] = i, _ds__sz[i] = 1;}
+
+int _ds__find(int s){return (_ds__p[s] == s)?s:_ds__p[s]=_ds__find(_ds__p[s]);}
+
+void _ds__union(int a, int b)
+{
+    a = _ds__find(a), b = _ds__find(b);
+    if(a == b) return;
+    if(_ds__sz[a] < _ds__sz[b])swap(a,b);
+    _ds__sz[a] += _ds__sz[b];
+    _ds__p[b] = a;
+}
+
+inline int abs(int a){return (a>0)?a:-a;}
+
 void organize_map_info() //Organize all the map information
 {
     for(int i = 0; i < 2; i++)
@@ -168,52 +199,185 @@ void organize_map_info() //Organize all the map information
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(bc_Planet(i), x, y));
             passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
+            if(bc_Planet(i) == my_Planet) init_karbonite[i] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
         }
     }
     int h = map_height[my_Planet], w = map_width[my_Planet];
+    vector<bool>& p = passable[my_Planet];
 //    Guess the symmetry
     if(my_Planet == Earth)
     {
         for(int i = 3; i; i--)
         {
             bool correct = 1;
-            for(int loc = 0; loc < h*w; loc++) if(passable[loc] != passable[correspoinding_point(loc, i)])
+            for(int loc = 0; loc < h*w; loc++) if(p[loc] != p[correspoinding_point(loc, i)])
             {
                 correct = 0;
                 break;
             }
             if(correct)
             {
-                sym = i;
+                symmetry = i;
                 break;
             }
         }
     }
 //    BFS shortest path
-    vector<bool>& p = passable[my_Planet];
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
     for(int i = 0; i < h*w; i++) // BFS.
     {
+        distance_to_wall[i] = -1; //-1 = Very large
         if(!p[i]) continue;
         queue<int> q; q.push(i);
         while(q.size())
         {
             int j = q.front(); q.pop();
             for(int k = 0; k < 8; k++)
-                if(!out_of_bound(j, k) && shortest_distance[i][j+go(k)] == -1 && p[j+go(k)])
+            {
+                if(!out_of_bound(j, k) && p[j+go(k)])
                 {
-                    shortest_distance[i][j+go(k)] = shortest_distance[i][j]+1;
-                    q.push(j+go(k));
+                    if(shortest_distance[i][j+go(k)] == -1)
+                    {
+                        shortest_distance[i][j+go(k)] = shortest_distance[i][j]+1;
+                        q.push(j+go(k));
+                    }
                 }
+                else distance_to_wall[i] = min(distance_to_wall[i], shortest_distance[i][j]+1);
+            }
         }
     }
+//    Simplify the map
+    vector<bitset<2500>> can_see(h*w);
+
+//    for(int i = 0; i < h*w; i++)
+//    {
+//        if(!p[i]) continue;
+//        int ix = i%w, iy = i/w;
+//        for(int j = 0; j < h*w; j++)
+//        {
+//            if(!p[j]) continue;
+//            int jx = j%w, jy = j/w;
+//            if(shortest_distance[i][j] == max(abs(ix-jx), abs(iy-jy))) can_see[i][j] = 1;
+//        }
+//    }
+
+    for(int i = 0; i < h*w; i++)
+    {
+        if(!p[i]) continue;
+        for(int j = 0; j < 4; j++)
+        {
+            int ii = i;
+            while(1)
+            {
+                int iii = ii;
+                while(1)
+                {
+                    can_see[i][iii] = 1;
+                    if(out_of_bound(iii, 2*j) || !p[iii+go(2*j)]) break;
+                    iii += go(2*j);
+                }
+                if(out_of_bound(ii, (2*j+2)%8) || !p[ii+go((2*j+2)%8)]) break;
+                ii += go((2*j+2)%8);
+            }
+            ii = i;
+            while(1)
+            {
+                int iii = ii;
+                while(1)
+                {
+                    can_see[i][iii] = 1;
+                    if(out_of_bound(iii, 2*j) || !p[iii+go(2*j)]) break;
+                    iii += go(2*j);
+                }
+                if(out_of_bound(ii, (2*j+6)%8) || !p[ii+go((2*j+6)%8)]) break;
+                ii += go((2*j+6)%8);
+            }
+        }
+    }
+
+//    BFS again
+    queue<int> qq;
+    vector<bool> visited(h*w);
+    for(int i = 0; i < h*w; i++) if(p[i])
+    {
+        qq.push(i); visited[i] = 1;
+        break;
+    }
+    _ds__init(h*w);
+    while(qq.size())
+    {
+        int j = qq.front(); qq.pop();
+        for(int k = 0; k < 8; k++)
+            if(!out_of_bound(j, k) && p[j+go(k)])
+            {
+                if(!visited[j+go(k)]) visited[j+go(k)] = 1, qq.push(j+go(k));
+                else if(!(can_see[j]^can_see[j+go(k)]).count()) _ds__union(j, j+go(k));
+            }
+    }
+
+    fill(visited.begin(), visited.end(), 0);
+    for(int i = 0; i < h*w; i++) if(p[i])
+    {
+        qq.push(i); visited[i] = 1;
+        break;
+    }
+    while(qq.size())
+    {
+        int j = qq.front(); qq.pop();
+        for(int k = 0; k < 8; k++)
+            if(!out_of_bound(j, k) && p[j+go(k)])
+            {
+                if(!visited[j+go(k)]) visited[j+go(k)] = 1, qq.push(j+go(k));
+                else if((can_see[j]^can_see[j+go(k)]).count() <= h*w/10/min(_ds__sz[_ds__find(j)], _ds__sz[_ds__find(j+go(k))])) _ds__union(j, j+go(k));
+            }
+    }
+
+    fill(chunk_label, chunk_label+h*w, -1);
+    for(int i = 0; i < h*w; i++) if(p[i] && _ds__p[i] == i) chunk_label[i] = chunk_num++;
+    for(int i = 0; i < h*w; i++) if(p[i]) chunk_label[i] = chunk_label[_ds__find(i)];
+    chunk_edge.resize(chunk_num);
+    chunk_size.resize(chunk_num);
+    chunk_karbonite.resize(chunk_num);
+    chunk_rep.resize(chunk_num);
+    vector<pair<unsigned int,double>> chunk_dist_to_wall(chunk_num);
+    vector<pair<double,double>> chunk_centroid(chunk_num);
+    for(int i = 0; i < h*w; i++)
+    {
+        if(!p[i]) continue;
+        chunk_size[chunk_label[i]]++;
+        chunk_karbonite[chunk_label[i]] += init_karbonite[i];
+        chunk_centroid[chunk_label[i]].first += i%w;
+        chunk_centroid[chunk_label[i]].second += i/w;
+        set<int> added;
+        for(int j = 0; j < 8; j++) if(!out_of_bound(i,j) && p[i+go(j)] && chunk_label[i] != chunk_label[i+go(j)] && !added.count(chunk_label[i+go(j)]))
+        {
+            added.insert(chunk_label[i+go(j)]);
+            bool found_it = 0;
+            for(int k = 0; k < chunk_edge[chunk_label[i]].size(); k++)
+                if(chunk_edge[chunk_label[i]][k].first == chunk_label[i+go(j)])
+                {
+                    chunk_edge[chunk_label[i]][k].second++;
+                    found_it = 1;
+                }
+            if(!found_it) chunk_edge[chunk_label[i]].push_back(make_pair(chunk_label[i+go(j)], 1));
+        }
+    }
+    for(int i = 0; i < chunk_num; i++) chunk_centroid[i].first /= chunk_size[i], chunk_centroid[i].second /= chunk_size[i];
+    for(int i = 0; i < h*w; i++)
+    {
+        if(!p[i]) continue;
+        int label = chunk_label[i];
+        auto tmp = make_pair(distance_to_wall[i], -abs(i%w-chunk_centroid[label].first) - abs(i/w-chunk_centroid[label].second));
+        if(tmp > chunk_dist_to_wall[label]) chunk_dist_to_wall[label] = tmp, chunk_rep[label] = i;
+    }
+
 //    DFS connected component on Mars for rockets landing
     if(my_Planet == Earth)
     {
         h = map_height[Mars], w = map_width[Mars];
         vector<bool>& q = passable[Mars];
         vector<int> fa(h*w);
-        vector<bool> visited(h*w);
+        fill(visited.begin(), visited.end(), 0);
         connected_square_num.resize(h*w);
         for(int i = 0; i < h*w; i++) if(q[i])
         {
@@ -726,10 +890,10 @@ int main() {
     my_Planet = bc_GameController_planet(gc);
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<endl;
-    cout<<"I guess this map has a symmetry of "<<symmetry<<endl;
 
     organize_map_info();
     orbit_pattern = bc_GameController_orbit_pattern(gc);
+    cout<<"I guess this map has a symmetry of "<<symmetry<<endl;
 
     bc_GameController_queue_research(gc, Worker);
     bc_GameController_queue_research(gc, Rocket);
