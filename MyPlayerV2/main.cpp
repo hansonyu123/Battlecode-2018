@@ -1040,6 +1040,7 @@ int main() {
             int id = bc_Unit_id(unit);
             int now_loc = teammates[tmprandom[ii]].first.first + teammates[tmprandom[ii]].first.second*map_width[my_Planet];
             bc_UnitType type = bc_Unit_unit_type(unit);
+            try_walk_to_rocket(id, type, now_loc);
 //            Here is what a worker will do
             if(type == Worker)
             {
