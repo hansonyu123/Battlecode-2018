@@ -127,6 +127,7 @@ vector<int> chunk_rep; //A representative of a chunk. Just for estimation.
 vector<int> chunk_friend_fire;
 vector<int> chunk_enemy_fire;
 int target_rocket_id[65536];
+int poked_direction[65536];
 bool visible[2500];
 Ptr<bc_Unit> units[2500];
 vector<pair<pair<int,int>,Ptr<bc_Unit>>> enemies;
@@ -506,12 +507,34 @@ bool try_blueprint(int id, int loc, bc_UnitType structure)
     for(int i = 0; i < 8; i++)
         if(bc_GameController_can_blueprint(gc, id, structure, bc_Direction(i)))
             if(distance_to_wall[loc+go(i)] > max_dist_to_wall) max_dist_to_wall = distance_to_wall[loc+go(i)], best_dir = i;
-    if(best_dir == -1) return 0;
+    if(best_dir == -1)
+    {
+        if(bc_GameController_karbonite(gc) >= bc_UnitType_blueprint_cost(structure))
+        {
+            for(int i = 0; i < 8; i++) if(!out_of_bound(loc, i) && passable[my_Planet][loc+go(i)])
+            {
+                Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (loc+go(i))%map_width[my_Planet], (loc+go(i))/map_width[my_Planet]));
+                if(bc_GameController_has_unit_at_location(gc, tmp))
+                {
+                    Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
+                    if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit)))
+                        poked_direction[bc_Unit_id(blocking_unit)] = i;
+                }
+            }
+        }
+        return 0;
+    }
     bc_GameController_blueprint(gc, id, structure, bc_Direction(best_dir));
     int new_loc = loc+go(best_dir);
     Ptr<bc_MapLocation> tmpmloc(new_bc_MapLocation(my_Planet, new_loc%map_width[my_Planet], new_loc/map_width[my_Planet]));
     Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, tmpmloc));
     units[new_loc] = tmp;
+    if(structure == Factory)
+    {
+        passable[my_Planet][new_loc] = 0;
+        for(int i = 0; i <map_width[my_Planet]*map_height[my_Planet]; i++)
+            shortest_distance[i][new_loc] = shortest_distance[new_loc][i] = -1;
+    }
     return 1;
 }
 
@@ -540,6 +563,17 @@ pair<bool, int> try_unload(int id, int loc)
         Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, tmpmloc));
         units[new_loc] = tmp;
         return make_pair(1, new_loc);
+    }
+    for(int i = 0; i < 8; i++) if(!out_of_bound(loc, i) && passable[my_Planet][loc+go(i)])
+    {
+        Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (loc+go(i))%map_width[my_Planet], (loc+go(i))/map_width[my_Planet]));
+        if(bc_GameController_has_unit_at_location(gc, tmp))
+        {
+            Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
+            if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit))
+                && bc_Unit_unit_type(blocking_unit) != Worker)
+                poked_direction[bc_Unit_id(blocking_unit)] = i;
+        }
     }
     return make_pair(0, -1);
 }
@@ -758,53 +792,129 @@ bool random_walk(int id, int loc)
 
 bool walk_to(int id, int now_loc, int dest_loc)
 {
-    assert(dest_loc >= 0 && dest_loc < map_width[my_Planet]*map_height[my_Planet] && passable[my_Planet][dest_loc]);
-    if(not_free.count(id))
-    {
-        int clockwise = 2*((id+1)%2)-1; //counter-clockwise or clockwise, depends on id
-        int last_dir = not_free[id];
-        int j = (last_dir-2*clockwise+8)%8;
-        while(1)
-        {
-            if(bc_GameController_can_move(gc, id, bc_Direction(j)))
-            {
-                if(shortest_distance[now_loc][dest_loc] > shortest_distance[now_loc+go(j)][dest_loc])
-                    not_free.erase(id);
-                else not_free[id] = j;
-                bc_GameController_move_robot(gc, id, bc_Direction(j));
-                units[now_loc] = Ptr<bc_Unit>();
-                units[now_loc+go(j)] = bc_GameController_unit(gc, id);
-                return 1;
-            }
-            j = (j+8+clockwise)%8;
-            if(j == (last_dir-2*clockwise+8)%8) return 0;
-        }
-    }
+//    if(not_free.count(id))
+//    {
+//        int clockwise = 2*((id+1)%2)-1; //counter-clockwise or clockwise, depends on id
+//        int last_dir = not_free[id];
+//        int j = (last_dir-2*clockwise+8)%8;
+//        while(1)
+//        {
+//            if(bc_GameController_can_move(gc, id, bc_Direction(j)))
+//            {
+//                if(shortest_distance[now_loc][dest_loc] > shortest_distance[now_loc+go(j)][dest_loc])
+//                    not_free.erase(id);
+//                else not_free[id] = j;
+//                bc_GameController_move_robot(gc, id, bc_Direction(j));
+//                units[now_loc] = Ptr<bc_Unit>();
+//                units[now_loc+go(j)] = bc_GameController_unit(gc, id);
+//                return 1;
+//            }
+//            j = (j+8+clockwise)%8;
+//            if(j == (last_dir-2*clockwise+8)%8) return 0;
+//        }
+//    }
+//    for(int i = 0; i < 8; i++)
+//    {
+//        if(out_of_bound(now_loc, i)) continue;
+//        if(shortest_distance[now_loc+go(i)][dest_loc] == shortest_distance[now_loc][dest_loc]-1)//So this direction is the preferred one
+//        {
+////            Bug Pathing
+//            int clockwise = 2*(id%2)-1; //clockwise or counter-clockwise, depends on id
+//            int j = i;
+//            while(1)
+//            {
+//                if(bc_GameController_can_move(gc, id, bc_Direction(j)))
+//                {
+//                    if(shortest_distance[now_loc][dest_loc] <= shortest_distance[now_loc+go(j)][dest_loc])
+//                        not_free[id] = j;
+//                    bc_GameController_move_robot(gc, id, bc_Direction(j));
+//                    units[now_loc] = Ptr<bc_Unit>();
+//                    units[now_loc+go(j)] = bc_GameController_unit(gc, id);
+//                    return 1;
+//                }
+//                j = (j+8+clockwise)%8;
+//                if(j == i) return 0;
+//            }
+//        }
+//    }
+//    return 0; //Although it should never reach here
+    if(shortest_distance[now_loc][dest_loc] == -1) return 0;
+    if(now_loc == dest_loc) return 0;
+    unsigned int shortest_dist = -1, nearest_dir;
     for(int i = 0; i < 8; i++)
     {
         if(out_of_bound(now_loc, i)) continue;
-        if(shortest_distance[now_loc+go(i)][dest_loc] == shortest_distance[now_loc][dest_loc]-1)//So this direction is the preferred one
+        if(shortest_distance[now_loc+go(i)][dest_loc] < shortest_dist)//So this direction is the preferred one
+            shortest_dist = shortest_distance[now_loc+go(i)][dest_loc], nearest_dir = i;
+    }
+    shortest_distance[now_loc][dest_loc] = shortest_distance[dest_loc][now_loc] = max(shortest_distance[now_loc][dest_loc],shortest_dist+1);
+    vector<int> adjust({0,1,7});
+    if(rand()%2) swap(adjust[0], adjust[1]);
+    for(auto adjust_dir:adjust)
+    {
+        int dir = (nearest_dir+adjust_dir)%8;
+        if(bc_GameController_can_move(gc, id, bc_Direction(dir)))
         {
-//            Bug Pathing
-            int clockwise = 2*(id%2)-1; //clockwise or counter-clockwise, depends on id
-            int j = i;
-            while(1)
-            {
-                if(bc_GameController_can_move(gc, id, bc_Direction(j)))
-                {
-                    if(shortest_distance[now_loc][dest_loc] <= shortest_distance[now_loc+go(j)][dest_loc])
-                        not_free[id] = j;
-                    bc_GameController_move_robot(gc, id, bc_Direction(j));
-                    units[now_loc] = Ptr<bc_Unit>();
-                    units[now_loc+go(j)] = bc_GameController_unit(gc, id);
-                    return 1;
-                }
-                j = (j+8+clockwise)%8;
-                if(j == i) return 0;
-            }
+            bc_GameController_move_robot(gc, id, bc_Direction(dir));
+            units[now_loc] = Ptr<bc_Unit>();
+            units[now_loc+go(dir)] = bc_GameController_unit(gc, id);
+            return 1;
+        }
+        Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (now_loc+go(dir))%map_width[my_Planet], (now_loc+go(dir))/map_width[my_Planet]));
+        if(!out_of_bound(now_loc, dir) && bc_GameController_has_unit_at_location(gc, tmp))
+        {
+            Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
+            if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit)))
+                poked_direction[bc_Unit_id(blocking_unit)] = dir;
         }
     }
-    return 0; //Although it should never reach here
+    return 0;
+}
+
+bool poked(int id, int now_loc)
+{
+    if(!bc_GameController_is_move_ready(gc, id) || poked_direction[id] == -1) return 0;
+    int pdir = poked_direction[id];
+    poked_direction[id] = -1;
+    assert(0<=pdir && pdir<8);
+    if(bc_GameController_can_move(gc, id, bc_Direction(pdir)))
+    {
+        assert(!out_of_bound(now_loc, pdir));
+        bc_GameController_move_robot(gc, id, bc_Direction(pdir));
+        units[now_loc] = Ptr<bc_Unit>();
+        units[now_loc+go(pdir)] = bc_GameController_unit(gc, id);
+        return 1;
+    }
+    Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (now_loc+go(pdir))%map_width[my_Planet], (now_loc+go(pdir))/map_width[my_Planet]));
+    if(!out_of_bound(now_loc, pdir) && bc_GameController_has_unit_at_location(gc, tmp))
+    {
+        Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
+        if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit)))
+            poked_direction[bc_Unit_id(blocking_unit)] = pdir;
+        vector<int> adjust({1,7,2,6});
+        if(rand()%2) swap(adjust[0], adjust[1]); if(rand()%2) swap(adjust[2], adjust[3]);
+        for(auto adjust_dir:adjust)
+        {
+            int dir = (pdir+adjust_dir)%8;
+            if(bc_GameController_can_move(gc, id, bc_Direction(dir)))
+            {
+                bc_GameController_move_robot(gc, id, bc_Direction(dir));
+                units[now_loc] = Ptr<bc_Unit>();
+                units[now_loc+go(dir)] = bc_GameController_unit(gc, id);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    vector<int> try_dir({1,7,2,6,3,5,4});
+    if(rand()%2) swap(try_dir[0], try_dir[1]); if(rand()%2) swap(try_dir[2], try_dir[3]); if(rand()%2) swap(try_dir[4], try_dir[5]);
+    for(int i = 0; i < 7; i++)
+    {
+        int dir = (pdir+try_dir[i])%8;
+        if(!out_of_bound(now_loc, dir) && passable[my_Planet][now_loc+go(dir)]) poked_direction[id] = dir;
+        return poked(id, now_loc);
+    }
+    return poked(id, now_loc);
 }
 
 bool walk_to_enemy(int id, int now_loc)
@@ -951,24 +1061,21 @@ bool walk_to_harvest(int id, int now_loc)
 {
     if(try_harvest(id)) return 1;
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    if(chunk_karbonite[chunk_label[now_loc]])
+    unsigned int nearest_dist = -1;
+    int dest_loc, now_x = now_loc%map_width[my_Planet], now_y = now_loc/map_width[my_Planet];
+    for(int i = -3; i <= 3; i++)
     {
-        unsigned int nearest_dist = -1;
-        int dest_loc, now_x = now_loc%map_width[my_Planet], now_y = now_loc/map_width[my_Planet];
-        for(int i = -3; i <= 3; i++)
+        if(now_x+i < 0 || now_x+i >= map_width[my_Planet]) continue;
+        for(int j = -3; j <= 3; j++)
         {
-            if(now_x+i < 0 || now_x+i >= map_width[my_Planet]) continue;
-            for(int j = -3; j <= 3; j++)
-            {
-                if(now_y+j < 0 || now_y+j >= map_height[my_Planet]) continue;
-                int loc = (now_x+i) + (now_y+j)*map_width[my_Planet];
-                if(karbonite[loc]) for(int k = 0; k < 9; k++)
-                    if(!out_of_bound(loc, k) && shortest_distance[now_loc][loc+go(k)] < nearest_dist)
-                        dest_loc = loc+go(k), nearest_dist = shortest_distance[now_loc][loc+go(k)];
-            }
+            if(now_y+j < 0 || now_y+j >= map_height[my_Planet]) continue;
+            int loc = (now_x+i) + (now_y+j)*map_width[my_Planet];
+            if(karbonite[loc]) for(int k = 0; k < 9; k++)
+                if(!out_of_bound(loc, k) && shortest_distance[now_loc][loc+go(k)] < nearest_dist)
+                    dest_loc = loc+go(k), nearest_dist = shortest_distance[now_loc][loc+go(k)];
         }
-        if(nearest_dist != (unsigned int)-1) return walk_to(id, now_loc, dest_loc);
     }
+    if(nearest_dist != (unsigned int)-1) return walk_to(id, now_loc, dest_loc);
     int max_karbonite = -1, dest_label;
     int label = chunk_label[now_loc];
     for(auto p:chunk_edge[label])
@@ -999,7 +1106,6 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, int& now_loc)
 
 int main() {
     printf("Meow Starting\n");
-    int print_round = 1001;
 
     srand(7122);
     gen.seed(7122);
@@ -1012,12 +1118,14 @@ int main() {
     my_Planet = bc_GameController_planet(gc);
     my_Team = bc_GameController_team(gc);
     cout<<"I am team "<<my_Team<<','<<my_Planet<<endl;
+    int print_round = 1001;
 
     organize_map_info();
     orbit_pattern = bc_GameController_orbit_pattern(gc);
     cout<<"I guess this map has a symmetry of "<<symmetry<<endl;
 
     int start_loc = -1;
+    fill(poked_direction, poked_direction+65536, -1);
 
     bc_GameController_queue_research(gc, Worker);
     bc_GameController_queue_research(gc, Ranger);
@@ -1116,6 +1224,9 @@ int main() {
             int id = bc_Unit_id(unit);
             int now_loc = teammates[tmprandom[ii]].first.first + teammates[tmprandom[ii]].first.second*map_width[my_Planet];
             bc_UnitType type = bc_Unit_unit_type(unit);
+            if(round >= print_round) cout<<"START POKED"<<endl;
+            if(poked(id, now_loc)) update_unit_location(id, unit, now_loc);
+            if(round >= print_round) cout<<"END POKED"<<endl;
             if(type != Worker) if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
 //            Here is what a worker will do
             if(type == Worker)
@@ -1133,7 +1244,7 @@ int main() {
                         if(tmprep.first) id = tmprep.second;
                     }
                 if(!done) done = dontmove = try_build(id, now_loc); //Stay still to continue building
-                if(!done) done = dontmove = walk_to_harvest(id, now_loc); //Stay still to continue harvesting
+                if(walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc); //Stay still to continue harvesting
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8) done = dontmove = try_blueprint(id, now_loc, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
                 if(!done) done = dontmove = try_repair(id, now_loc); //Stay still to continue repairing
