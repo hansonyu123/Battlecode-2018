@@ -1116,7 +1116,7 @@ int main() {
             int id = bc_Unit_id(unit);
             int now_loc = teammates[tmprandom[ii]].first.first + teammates[tmprandom[ii]].first.second*map_width[my_Planet];
             bc_UnitType type = bc_Unit_unit_type(unit);
-            try_walk_to_rocket(id, type, now_loc);
+            if(type != Worker) if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -1130,7 +1130,7 @@ int main() {
                     if(!can_build_rocket || karb-15 >= ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size()) * 100)
                     {
                         auto tmprep = try_replicate(id, now_loc);
-                        if(done) id = tmprep.second;
+                        if(tmprep.first) id = tmprep.second;
                     }
                 if(!done) done = dontmove = try_build(id, now_loc); //Stay still to continue building
                 if(!done) done = dontmove = walk_to_harvest(id, now_loc); //Stay still to continue harvesting
@@ -1139,17 +1139,20 @@ int main() {
                 if(!done) done = dontmove = try_repair(id, now_loc); //Stay still to continue repairing
                 if(!dontmove && can_move(id))
                 {
-                    auto f = worker_gravity_force(now_loc);
-                    //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
-                    vector<int> walk_weight;
-                    for(int i = 0; i < 8; i++)
+                    if(!try_walk_to_rocket(id, type, now_loc))
                     {
-                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
-                        int dify = (go(i)+1)/map_width[my_Planet];
-                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
+                        auto f = worker_gravity_force(now_loc);
+                        //cout<<"FORCE"<<f.first<<' '<<f.second<<endl;
+                        vector<int> walk_weight;
+                        for(int i = 0; i < 8; i++)
+                        {
+                            int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
+                            int dify = (go(i)+1)/map_width[my_Planet];
+                            walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
+                        }
+                        walk_weight.push_back(20);
+                        random_walk(id, now_loc, walk_weight);
                     }
-                    walk_weight.push_back(20);
-                    random_walk(id, now_loc, walk_weight);
                 }
                 check_errors("Worker's turn");
             }
