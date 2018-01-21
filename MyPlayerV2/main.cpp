@@ -1006,7 +1006,7 @@ int main() {
                     {
                         auto tmprep = try_replicate(id, v, now_mlocation);
                         done = tmprep.first;
-                        id = tmprep.second;
+                        if(done) id = tmprep.second;
                     }
 
                 if(!done && building_rocket.size()+built_rocket.size() < (len+7)/8) done = dontmove = try_blueprint(id, v, now_mlocation, Rocket); //Stay still to build rocket
