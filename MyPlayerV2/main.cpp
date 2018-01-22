@@ -130,6 +130,7 @@ int target_rocket_id[65536];
 int poked_direction[65536];
 bool visible[2500];
 Ptr<bc_Unit> units[2500];
+int enemies_max_total_damage[2500];
 vector<pair<pair<int,int>,Ptr<bc_Unit>>> enemies;
 vector<pair<pair<int,int>,Ptr<bc_Unit>>> teammates;
 map<int, int> my_factories;
@@ -139,6 +140,7 @@ typedef vector<pair<pair<int,int>,Ptr<bc_Unit>>>::iterator vit;
 bool try_blueprint_rocket;
 bool success_bluesprint_rocket;
 bool need_worker;
+bool first_enemy;
 
 vit find_by_x(vit first, vit last, int x)
 {
@@ -468,6 +470,42 @@ vector<int> get_random_indices(vector<int>& weight) //Get random indices accordi
     return ret;
 }
 
+int get_total_damage(int loc)
+{
+    if(enemies_max_total_damage[loc] != -1) return enemies_max_total_damage[loc];
+    enemies_max_total_damage[loc] = 0;
+    int dist = 50;
+    int sq = 0; while((sq+1)*(sq+1) <= dist) sq++;
+    int now_x = loc%map_width[my_Planet], now_y = loc/map_width[my_Planet];
+    auto first = find_by_x(enemies.begin(), enemies.end(), now_x-sq);
+    auto last = find_by_x(enemies.begin(), enemies.end(), now_x+sq+1);
+    if(last-first < 22*dist/7) for(auto it = first; it != last; it++)
+    {
+        int x = it->first.first, y = it->first.second;
+        bc_UnitType type = bc_Unit_unit_type(it->second);
+        if(!is_robot(type) || type == Worker || type == Healer) continue;
+        if((x-now_x)*(x-now_x)+(y-now_y)*(y-now_y) <= bc_Unit_attack_range(it->second))
+            enemies_max_total_damage[loc] += bc_Unit_damage(it->second);
+    }
+    else for(int i = 0; i <= sq; i++) for(int neg_x = -1; neg_x < (i?3:1); neg_x+=2)
+        {
+            if(now_x+neg_x*i < 0 || now_x+neg_x*i >= map_width[my_Planet]) continue;
+            for(int j = 0; j*j+i*i <= dist; j++) for(int neg_y = -1; neg_y < (j?3:1); neg_y += 2)
+            {
+                if(now_y+neg_y*j < 0 || now_y+neg_y*j >= map_height[my_Planet]) continue;
+                int new_loc = now_x+neg_x*i + (now_y+neg_y*j)*map_width[my_Planet];
+                if(units[new_loc] && bc_Unit_team(units[new_loc]) != my_Team)
+                {
+                    bc_UnitType type = bc_Unit_unit_type(units[new_loc]);
+                    if(!is_robot(type) || type == Worker || type == Healer) continue;
+                    if(i*i+j*j <= bc_Unit_attack_range(units[new_loc]))
+                        enemies_max_total_damage[loc] += bc_Unit_damage(units[new_loc]);
+                }
+            }
+        }
+    return enemies_max_total_damage[loc];
+}
+
 bool try_harvest(int id)
 {
     for(int i = 0; i < 8; i++)
@@ -602,10 +640,9 @@ bool try_produce(int id, vector<int>& weight) //weight: in proportion to the pro
     return 0;
 }
 
-bool try_attack(int id, int loc, int dist)
+void get_nearby_enemies(int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
 {
-    if(!bc_GameController_is_attack_ready(gc, id)) return 0;
-    vector<Ptr<bc_Unit>> nearby_enemies;
+    nearby_enemies.clear();
     int sq = 0; while((sq+1)*(sq+1) <= dist) sq++;
     int now_x = loc%map_width[my_Planet], now_y = loc/map_width[my_Planet];
     auto first = find_by_x(enemies.begin(), enemies.end(), now_x-sq);
@@ -625,6 +662,10 @@ bool try_attack(int id, int loc, int dist)
                 if(units[new_loc] && bc_Unit_team(units[new_loc]) != my_Team) nearby_enemies.push_back(units[new_loc]);
             }
         }
+}
+
+bool try_attack(int id, int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
+{
     vector<int> weight(nearby_enemies.size());
     for(int i = 0; i < nearby_enemies.size(); i++)
     {
@@ -649,29 +690,19 @@ bool try_attack(int id, int loc, int dist)
     return 0;
 }
 
+bool try_attack(int id, int loc, int dist)
+{
+    if(!bc_GameController_is_attack_ready(gc, id)) return 0;
+    vector<Ptr<bc_Unit>> nearby_enemies;
+    get_nearby_enemies(loc, dist, nearby_enemies);
+    return try_attack(id, loc, dist, nearby_enemies);
+}
+
 bool try_javelin(int id, int loc, int dist)
 {
     if(!bc_GameController_is_javelin_ready(gc, id)) return 0;
     vector<Ptr<bc_Unit>> nearby_enemies;
-    int sq = 0; while((sq+1)*(sq+1) <= dist) sq++;
-    int now_x = loc%map_width[my_Planet], now_y = loc/map_width[my_Planet];
-    auto first = find_by_x(enemies.begin(), enemies.end(), now_x-sq);
-    auto last = find_by_x(enemies.begin(), enemies.end(), now_x+sq+1);
-    if(last-first < 22*dist/7) for(auto it = first; it != last; it++)
-    {
-        int x = it->first.first, y = it->first.second;
-        if((x-now_x)*(x-now_x)+(y-now_y)*(y-now_y) <= dist) nearby_enemies.push_back(it->second);
-    }
-    else for(int i = 0; i <= sq; i++) for(int neg_x = -1; neg_x < (i?3:1); neg_x+=2)
-        {
-            if(now_x+neg_x*i < 0 || now_x+neg_x*i >= map_width[my_Planet]) continue;
-            for(int j = 0; j*j+i*i <= dist; j++) for(int neg_y = -1; neg_y < (j?3:1); neg_y += 2)
-            {
-                if(now_y+neg_y*j < 0 || now_y+neg_y*j >= map_height[my_Planet]) continue;
-                int new_loc = now_x+neg_x*i + (now_y+neg_y*j)*map_width[my_Planet];
-                if(units[new_loc] && bc_Unit_team(units[new_loc]) != my_Team) nearby_enemies.push_back(units[new_loc]);
-            }
-        }
+    get_nearby_enemies(loc, dist, nearby_enemies);
     vector<int> weight(nearby_enemies.size());
     for(int i = 0; i < nearby_enemies.size(); i++)
     {
@@ -888,7 +919,7 @@ bool poked(int id, int now_loc)
     assert(0<=pdir && pdir<8);
     if(bc_GameController_can_move(gc, id, bc_Direction(pdir)))
     {
-        assert(!out_of_bound(now_loc, pdir));
+        if(get_total_damage(now_loc+go(pdir)) > get_total_damage(now_loc)) return 0;
         bc_GameController_move_robot(gc, id, bc_Direction(pdir));
         units[now_loc] = Ptr<bc_Unit>();
         units[now_loc+go(pdir)] = bc_GameController_unit(gc, id);
@@ -907,6 +938,7 @@ bool poked(int id, int now_loc)
             int dir = (pdir+adjust_dir)%8;
             if(bc_GameController_can_move(gc, id, bc_Direction(dir)))
             {
+                if(get_total_damage(now_loc+go(dir)) > get_total_damage(now_loc)) return 0;
                 bc_GameController_move_robot(gc, id, bc_Direction(dir));
                 units[now_loc] = Ptr<bc_Unit>();
                 units[now_loc+go(dir)] = bc_GameController_unit(gc, id);
@@ -1165,6 +1197,7 @@ int main() {
         fill(chunk_enemy_fire.begin(), chunk_enemy_fire.end(), 0);
         fill(chunk_friend_fire.begin(), chunk_friend_fire.end(), 0);
         try_blueprint_rocket = success_bluesprint_rocket = 0;
+        fill(enemies_max_total_damage, enemies_max_total_damage+2500, -1); //-1 = uncalculated
         teammates.clear();
         enemies.clear();
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
@@ -1203,6 +1236,7 @@ int main() {
                 }
             }
         }
+        if(enemies.size()) first_enemy = 1;
 
         vector<int> high_priority;
 //        For the early stage strategy. Determine the starting point.
@@ -1376,16 +1410,31 @@ int main() {
             {
                 if(round >= print_round) cout<<"Mage"<<endl;
                 try_attack(id, now_loc, 30);
-                if(my_Planet == Earth && (round < 300 || enemies.size())) walk_to_opposite(id, now_loc, start_loc);
-                else random_walk(id, now_loc);
+                if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                else if(enemies.size())
+                {
+                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc))
+                    {
+                        update_unit_location(id, unit, now_loc);
+                        try_attack(id, now_loc, 30);
+                    }
+                }
                 check_errors("Mage's turn");
             }
             else if(type == Ranger)
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
                 try_attack(id, now_loc, 50);
-                if(my_Planet == Earth && (round < 300 || enemies.size())) walk_to_opposite(id, now_loc, start_loc);
-                else random_walk(id, now_loc);
+                vector<Ptr<bc_Unit>> nearby_enemies;
+                if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                else if(enemies.size())
+                {
+                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc))
+                    {
+                        update_unit_location(id, unit, now_loc);
+                        try_attack(id, now_loc, 50);
+                    }
+                }
                 check_errors("Ranger's turn");
             }
         }
