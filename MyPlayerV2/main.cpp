@@ -142,6 +142,7 @@ bool try_blueprint_rocket;
 bool success_bluesprint_rocket;
 bool need_worker;
 bool first_enemy;
+int invisible_loc;
 
 vit find_by_x(vit first, vit last, int x)
 {
@@ -1161,6 +1162,12 @@ bool walk_to_harvest(int id, int now_loc)
     return 0;
 }
 
+bool explore_unknown(int id, int now_loc)
+{
+    if(!bc_GameController_is_move_ready(gc, id) || invisible_loc == -1) return 0;
+    return walk_to(id, now_loc, invisible_loc);
+}
+
 Ptr<bc_MapLocation> get_mlocation(Ptr<bc_Unit>& unit)
 {
     Ptr<bc_Location> tmp(bc_Unit_location(unit));
@@ -1235,6 +1242,7 @@ int main() {
         fill(enemies_max_total_damage, enemies_max_total_damage+2500, -1); //-1 = uncalculated
         teammates.clear();
         enemies.clear();
+        invisible_loc = -1;
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, i, j));
@@ -1270,6 +1278,7 @@ int main() {
                     }
                 }
             }
+            else if(passable[my_Planet][i+j*map_width[my_Planet]]) invisible_loc = i+j*map_width[my_Planet];
         }
         if(enemies.size()) first_enemy = 1;
 
@@ -1333,6 +1342,7 @@ int main() {
 //                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
 //                TODO: Make every attempt into a function, and change the order based on some other numbers
                 if(round >= print_round) cout<<"Worker"<<endl;
+                if(!can_build_rocket && first_enemy && !enemies.size()) continue;
                 bool done = 0, dontmove = 0;
                 if(!done && (!can_build_rocket || my_factories.size() <= 3)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
                 if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
@@ -1455,6 +1465,7 @@ int main() {
                         try_attack(id, now_loc, 30);
                     }
                 }
+                else if(invisible_loc != -1 && !(id%10)) explore_unknown(id, now_loc);
                 check_errors("Mage's turn");
             }
             else if(type == Ranger)
@@ -1471,6 +1482,7 @@ int main() {
                         try_attack(id, now_loc, 50);
                     }
                 }
+                else if(invisible_loc != -1 && !(id%10)) explore_unknown(id, now_loc);
                 check_errors("Ranger's turn");
             }
         }
