@@ -126,6 +126,7 @@ vector<int> chunk_karbonite;
 vector<int> chunk_rep; //A representative of a chunk. Just for estimation.
 vector<int> chunk_friend_fire;
 vector<int> chunk_enemy_fire;
+vector<int> chunk_next_chunk_to_karbonite;
 int target_rocket_id[65536];
 int poked_direction[65536];
 bool visible[2500];
@@ -381,6 +382,7 @@ void organize_map_info() //Organize all the map information
     chunk_rep.resize(chunk_num);
     chunk_enemy_fire.resize(chunk_num);
     chunk_friend_fire.resize(chunk_num);
+    chunk_next_chunk_to_karbonite.resize(chunk_num, -1);
     vector<pair<unsigned int,double>> chunk_dist_to_wall(chunk_num);
     vector<pair<double,double>> chunk_centroid(chunk_num);
     for(int i = 0; i < h*w; i++)
@@ -580,6 +582,12 @@ bool try_blueprint(int id, int loc, bc_UnitType structure)
             shortest_distance[i][new_loc] = shortest_distance[new_loc][i] = -1;
         alive_factories.insert(bc_Unit_id(tmp));
         my_factories[bc_Unit_id(tmp)] = new_loc;
+        for(int i = 0; i < chunk_num; i++) if(chunk_rep[i] == new_loc) for(int dir = 0; dir < 8; dir++)
+            if(!out_of_bound(new_loc, dir) && passable[my_Planet][new_loc+go(dir)])
+            {
+                chunk_rep[i] += go(dir);
+                break;
+            }
     }
     if(structure == Rocket) success_bluesprint_rocket = 1;
     return 1;
@@ -1098,6 +1106,36 @@ bool try_walk_to_rocket(int id, bc_UnitType type, int now_loc)
     return walk_to(id, now_loc, dest_loc);
 }
 
+int get_next_chunk(int label)
+{
+    if(chunk_next_chunk_to_karbonite[label] != -1) return chunk_next_chunk_to_karbonite[label];
+    chunk_next_chunk_to_karbonite[label] = -2;
+//    Dijkstra
+    priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;
+    vector<bool> visited(chunk_num);
+    pq.push(make_pair(0, label));
+    double max_willingness = 0;
+    while(pq.size())
+    {
+        pair<int,int> tmp = pq.top(); pq.pop();
+        int now_label = tmp.second, dist = tmp.first;
+        if(visited[now_label]) continue;
+        visited[now_label] = 1;
+        if(now_label != label)
+        {
+            double willingness = ((double)chunk_karbonite[now_label])/chunk_size[now_label]/dist;
+            if(willingness > max_willingness) max_willingness = willingness, chunk_next_chunk_to_karbonite[label] = now_label;
+        }
+        for(auto pr:chunk_edge[now_label]) if(!visited[pr.first])
+        {
+            assert(shortest_distance[chunk_rep[pr.first]][chunk_rep[now_label]] != -1);
+            if(chunk_friend_fire[pr.first] < chunk_enemy_fire[pr.first]) continue;
+            pq.push(make_pair(dist+shortest_distance[chunk_rep[pr.first]][chunk_rep[now_label]], pr.first));
+        }
+    }
+    return chunk_next_chunk_to_karbonite[label];
+}
+
 bool walk_to_harvest(int id, int now_loc)
 {
     if(try_harvest(id)) return 1;
@@ -1117,12 +1155,9 @@ bool walk_to_harvest(int id, int now_loc)
         }
     }
     if(nearest_dist != (unsigned int)-1) return walk_to(id, now_loc, dest_loc);
-    int max_karbonite = -1, dest_label;
     int label = chunk_label[now_loc];
-    for(auto p:chunk_edge[label])
-        if(chunk_friend_fire[p.first] >= chunk_enemy_fire[p.first] && max_karbonite < chunk_karbonite[p.first])
-            max_karbonite = chunk_karbonite[p.first], dest_label = p.first;
-    if(max_karbonite != -1) return walk_to(id, now_loc, chunk_rep[dest_label]);
+    int dest_label = get_next_chunk(label);
+    if(dest_label != -2) return walk_to(id, now_loc, chunk_rep[dest_label]);
     return 0;
 }
 
@@ -1193,9 +1228,9 @@ int main() {
         typecount.clear(); typecount.resize(7);
         fill(visible, visible+2500, 0);
         fill(units, units+2500, Ptr<bc_Unit>());
-        fill(chunk_karbonite.begin(), chunk_karbonite.end(), 0);
         fill(chunk_enemy_fire.begin(), chunk_enemy_fire.end(), 0);
         fill(chunk_friend_fire.begin(), chunk_friend_fire.end(), 0);
+        fill(chunk_next_chunk_to_karbonite.begin(), chunk_next_chunk_to_karbonite.end(), -1);
         try_blueprint_rocket = success_bluesprint_rocket = 0;
         fill(enemies_max_total_damage, enemies_max_total_damage+2500, -1); //-1 = uncalculated
         teammates.clear();
@@ -1265,6 +1300,7 @@ int main() {
             {
                 if(bc_Unit_unit_type(teammates[i].second) != Worker) continue;
                 int willingness = 0, loc = teammates[i].first.first + teammates[i].first.second*map_width[my_Planet];
+                if(get_total_damage(loc)) continue;
                 willingness += distance_to_wall[loc]*10;
                 willingness += chunk_size[chunk_label[loc]];
                 willingness += min(0, chunk_friend_fire[chunk_label[loc]]-chunk_enemy_fire[chunk_label[loc]]);
@@ -1278,7 +1314,7 @@ int main() {
         random_shuffle(tmprandom.begin(), tmprandom.end());
         for(int ii = 0; ii < high_priority.size(); ii++) for(int i = 0; i < teammates.size(); i++)
             if(high_priority[ii] == tmprandom[i])
-                swap(tmprandom[i], tmprandom[i]);
+                swap(tmprandom[i], tmprandom[ii]);
         for(int ii = 0; ii < teammates.size(); ii++)
         {
             if(round >= print_round) cout<<"INIT"<<endl;
