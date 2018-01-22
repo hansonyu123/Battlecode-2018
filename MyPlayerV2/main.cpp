@@ -1304,10 +1304,10 @@ int main() {
                        || my_Planet == Mars && round >= 750)
                     {
                         auto tmprep = try_replicate(id, now_loc);
-                        if(tmprep.first) id = tmprep.second;
+                        if(tmprep.first) now_loc = tmprep.second, unit = units[now_loc], id = bc_Unit_id(unit);
                     }
                 if(!done) done = dontmove = try_build(id, now_loc); //Stay still to continue building
-                if(walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc); //Stay still to continue harvesting
+                if(!dontmove && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc); //Stay still to continue harvesting
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8
                    && can_build_rocket && bc_GameController_karbonite(gc) >= 75)
                     done = dontmove = try_blueprint(id, now_loc, Rocket); //Stay still to build rocket
