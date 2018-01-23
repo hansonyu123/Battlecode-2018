@@ -253,6 +253,7 @@ void organize_map_info() //Organize all the map information
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(bc_Planet(i), x, y));
             passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
+
             if(bc_Planet(i) == my_Planet) karbonite[map_width[i]*y+x] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
         }
     }
@@ -261,20 +262,29 @@ void organize_map_info() //Organize all the map information
 //    Guess the symmetry
     if(my_Planet == Earth)
     {
-        for(int i = 3; i; i--)
-        {
-            bool correct = 1;
-            for(int loc = 0; loc < h*w; loc++) if(p[loc] != p[corresponding_point(loc, i)])
+        bool possibly_1 = true, possibly_2 = true;
+        
+        // Check for symmetry = 2
+        for(int loc = 0; loc < h*w/2; loc++){
+            if(p[loc] != p[corresponding_point(loc, 2)])
             {
-                correct = 0;
-                break;
-            }
-            if(correct)
-            {
-                symmetry = i;
+                possibly_2 = false;
                 break;
             }
         }
+        
+        // Check for symmetry = 1
+        for(int loc = 0; loc < h*w/2; loc++){ //Note this checks half the map, plus the other half through corresponding_point.
+            int temp_x = loc/w, temp_y = loc%h; // Convert from row-major to column-major
+            int inverted_loc = h*temp_y+temp_x;
+            if(p[inverted_loc] != p[corresponding_point(inverted_loc, 1)])
+            {
+                possibly_1 = false;
+                break;
+            }
+        }
+        if (possibly_1 == possibly_2) symmetry = 3;
+        else symmetry = possibly_1 ? 1 : 2;
     }
     else asteroid_pattern = bc_GameController_asteroid_pattern(gc);
 //    BFS shortest path
