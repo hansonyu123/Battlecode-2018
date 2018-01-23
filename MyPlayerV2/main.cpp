@@ -110,7 +110,7 @@ unsigned int distance_to_wall[2500]; //Distance to impassable squares/the bound 
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 default_random_engine gen; //C++11 random engine
 bool can_build_rocket;
-set<int> building_rocket;
+map<int, int> building_rocket; //(id, loc)
 map<int, pair<int,int>> built_rocket; //(id, (worker_num, total_num))
 map<int, int> built_rocket_location;
 map<int, int> not_free; //For Bug pathing. not_free[id] = (destination_loc, last_direction);
@@ -127,7 +127,8 @@ vector<int> chunk_rep; //A representative of a chunk. Just for estimation.
 vector<int> chunk_friend_fire;
 vector<int> chunk_enemy_fire;
 vector<int> chunk_next_chunk_to_karbonite;
-int target_rocket_id[65536];
+int rockets_wait_for_work_round[65536];
+int worker_build_target[65536];
 int poked_direction[65536];
 bool visible[2500];
 Ptr<bc_Unit> units[2500];
@@ -143,6 +144,7 @@ bool success_bluesprint_rocket;
 bool need_worker;
 bool first_enemy;
 int invisible_loc;
+
 
 vit find_by_x(vit first, vit last, int x)
 {
@@ -736,10 +738,9 @@ bool try_javelin(int id, int loc, int dist)
     return 0;
 }
 
-bool try_heal(int id, int loc, int dist)
+void get_nearby_teammates(int loc, int dist, vector<Ptr<bc_Unit>>& nearby_teammates)
 {
-    if(!bc_GameController_is_heal_ready(gc, id)) return 0;
-    vector<Ptr<bc_Unit>> nearby_teammates;
+    nearby_teammates.clear();
     int sq = 0; while((sq+1)*(sq+1) <= dist) sq++;
     int now_x = loc%map_width[my_Planet], now_y = loc/map_width[my_Planet];
     auto first = find_by_x(teammates.begin(), teammates.end(), now_x-sq);
@@ -759,6 +760,13 @@ bool try_heal(int id, int loc, int dist)
                 if(units[new_loc] && bc_Unit_team(units[new_loc]) == my_Team) nearby_teammates.push_back(units[new_loc]);
             }
         }
+}
+
+bool try_heal(int id, int loc, int dist)
+{
+    if(!bc_GameController_is_heal_ready(gc, id)) return 0;
+    vector<Ptr<bc_Unit>> nearby_teammates;
+    get_nearby_teammates(loc, dist, nearby_teammates);
     vector<int> weight(nearby_teammates.size());
     for(int i = 0; i < nearby_teammates.size(); i++)
     {
@@ -1254,6 +1262,7 @@ int main() {
         fill(chunk_enemy_fire.begin(), chunk_enemy_fire.end(), 0);
         fill(chunk_friend_fire.begin(), chunk_friend_fire.end(), 0);
         fill(chunk_next_chunk_to_karbonite.begin(), chunk_next_chunk_to_karbonite.end(), -1);
+        fill(worker_build_target, worker_build_target+65536, -1);
         try_blueprint_rocket = success_bluesprint_rocket = 0;
         fill(enemies_max_total_damage, enemies_max_total_damage+2500, -1); //-1 = uncalculated
         teammates.clear();
@@ -1282,6 +1291,7 @@ int main() {
                             if(type == Healer) chunk_enemy_fire[chunk_label[loc]] -= 10;
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
+                        else if(type == Rocket) alive_rockets.insert(bc_Unit_id(units[loc]));
                     }
                     else
                     {
@@ -1335,6 +1345,41 @@ int main() {
             high_priority.push_back(index);
         }
 
+        vector<int> to_erase;
+        for(auto rocket:building_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
+        for(auto erase_id:to_erase) building_rocket.erase(erase_id);
+        to_erase.clear();
+        for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
+        for(auto erase_id:to_erase) built_rocket.erase(erase_id), built_rocket_location.erase(erase_id);
+        alive_rockets.clear(); to_erase.clear();
+
+        for(auto rocket:building_rocket)
+        {
+            bool working = 0;
+            int id = rocket.first, now_loc = rocket.second;
+            for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && units[now_loc+go(i)])
+                if(bc_Unit_unit_type(units[now_loc+go(i)]) == Worker && bc_Unit_team(units[now_loc+go(i)]) == my_Team)
+                    working = 1;
+            if(working) rockets_wait_for_work_round[id] = 0;
+            else
+            {
+                int wait_round = ++rockets_wait_for_work_round[id];
+                vector<Ptr<bc_Unit>> nearby_teammates;
+                int x = now_loc%map_width[my_Planet], y = now_loc/map_width[my_Planet];
+                for(int i = -wait_round-1; i <= wait_round+1; i++)
+                {
+                    if(x+i < 0 || x+i >= map_width[my_Planet]) continue;
+                    for(int j = -wait_round-1; j <= wait_round+1; j++)
+                    {
+                        if(y+j < 0 || y+j >= map_height[my_Planet]) continue;
+                        int new_loc = (x+i) + (y+j)*map_width[my_Planet];
+                        if(units[new_loc] && bc_Unit_unit_type(units[new_loc]) == Worker && bc_Unit_team(units[new_loc]) == my_Team)
+                            worker_build_target[bc_Unit_id(units[new_loc])] = now_loc;
+                    }
+                }
+            }
+        }
+
         vector<int> tmprandom(teammates.size()); for(int i = 0; i < teammates.size(); i++) tmprandom[i] = i;
         random_shuffle(tmprandom.begin(), tmprandom.end());
         for(int ii = 0; ii < high_priority.size(); ii++) for(int i = 0; i < teammates.size(); i++)
@@ -1360,6 +1405,8 @@ int main() {
                 if(round >= print_round) cout<<"Worker"<<endl;
                 //if(!can_build_rocket && first_enemy && !enemies.size()) continue;
                 bool done = 0, dontmove = 0;
+                if(worker_build_target[id] != -1 && bc_GameController_is_move_ready(gc, id))
+                    done = dontmove = walk_to(id, now_loc, worker_build_target[id]);
                 if(!done && (!can_build_rocket || my_factories.size() <= 3)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
                 if(!done && should_replicate(id, now_loc, karb, round))
                 {
@@ -1400,7 +1447,7 @@ int main() {
                 if(can_build_rocket && !need_worker && karb-20 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,3});
                 if(can_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
-                if(can_build_rocket && (!typecount[0] || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
+                if(can_build_rocket && (typecount[0] <= building_rocket.size() || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 try_produce(id, weight);
                 check_errors("Factory's turn");
             }
@@ -1458,7 +1505,7 @@ int main() {
                            || (garrison_num == min(8, max_connected_num-1) && bc_OrbitPattern_duration(orbit_pattern, round) <= bc_OrbitPattern_duration(orbit_pattern, round+1))
                            || round == 749) launch(id, now_loc);
                     }
-                    else building_rocket.insert(id);
+                    else building_rocket[id] = now_loc;
                 }
                 else
                 {
@@ -1500,8 +1547,7 @@ int main() {
                 check_errors("Ranger's turn");
             }
         }
-        vector<int> to_erase;
-        for(auto rocket:building_rocket) if(!alive_rockets.count(rocket)) to_erase.push_back(rocket);
+        for(auto rocket:building_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
         for(auto erase_id:to_erase) building_rocket.erase(erase_id);
         to_erase.clear();
         for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
