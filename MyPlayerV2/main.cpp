@@ -282,7 +282,7 @@ void organize_map_info() //Organize all the map information
             // Creates a map of karbonite values for the local planet
             // I think karbonite[i] should be changed to karbonite[map_width[i]*y+x]
             // Changed
-            if(bc_Planet(i) == my_Planet) karbonite[map_width[i]*y=x] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
+            if(bc_Planet(i) == my_Planet) karbonite[map_width[i]*y+x] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
         }
     }
     int h = map_height[my_Planet], w = map_width[my_Planet]; //Placeholders for convenience
@@ -291,41 +291,29 @@ void organize_map_info() //Organize all the map information
 //    Guess the symmetry
     if(my_Planet == Earth)
     {
-        bool found = 0; // To optimize slightly, we assume that the symmetry is a third variant if the first two don't pass
-        for(int i = 2; i; i--)
-        {
-            bool correct = 1;
-            // For loop checks each position in the map
-            // If any position does not match with its corresponding point with the current symmetry (i), then it's not correct.
-            if(i==2){ // Reflect over y-axis (x changes)
-                for(int loc = 0; loc < h*w/2; loc++) 
-                    if(p[loc] != p[corresponding_point(loc, i)])
-                    {
-                        correct = 0;
-                        break;
-                    }
-            }
-            else{ // Reflect over x-axis (y changes)
-                for(int loc = 0; loc < h*w/2; loc++) //Note this checks half the map, plus the other half through corresponding_point.
-                                                        //Also, we could change it to loc+=2 or 3 to have a lighter, faster scan that would most likely work
-                    int temp_x = loc/w, temp_y = loc%h; // Convert from row-major to column-major
-                    int inverted_loc = h*temp_y+x;
-                    if(p[inverted_loc] != p[corresponding_point(inverted_loc, i)])
-                    {
-                        correct = 0;
-                        break;
-                    }
-            }
-            if(correct)
+        bool possibly_1 = true, possibly_2 = true;
+        
+        // Check for symmetry = 2
+        for(int loc = 0; loc < h*w/2; loc++){
+            if(p[loc] != p[corresponding_point(loc, 2)])
             {
-                found = 1;
-                symmetry = i;
+                possibly_2 = false;
                 break;
             }
         }
-        // If the symmetry is neither the first nor the second, it must be the third
-        if(!found) symmetry = 3;
-        printf(symmetry);
+        
+        // Check for symmetry = 1
+        for(int loc = 0; loc < h*w/2; loc++){ //Note this checks half the map, plus the other half through corresponding_point.
+            int temp_x = loc/w, temp_y = loc%h; // Convert from row-major to column-major
+            int inverted_loc = h*temp_y+temp_x;
+            if(p[inverted_loc] != p[corresponding_point(inverted_loc, 1)])
+            {
+                possibly_1 = false;
+                break;
+            }
+        }
+        if (possibly_1 == possibly_2) symmetry = 3;
+        else symmetry = possibly_1 ? 1 : 2;
     }
 //    BFS shortest path
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
