@@ -508,6 +508,8 @@ int get_total_damage(int loc)
                     if(!is_robot(type) || type == Worker || type == Healer) continue;
                     if(i*i+j*j <= bc_Unit_attack_range(units[new_loc]))
                         enemies_max_total_damage[loc] += bc_Unit_damage(units[new_loc]);
+                    else if(type == Knight && i*i+j*j <= 10)
+                        enemies_max_total_damage[loc] += bc_Unit_damage(units[new_loc]);
                 }
             }
         }
@@ -680,26 +682,52 @@ void get_nearby_enemies(int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
 
 bool try_attack(int id, int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
 {
-    vector<int> weight(nearby_enemies.size());
+//    vector<int> weight(nearby_enemies.size());
+//    for(int i = 0; i < nearby_enemies.size(); i++)
+//    {
+//        bc_UnitType type = bc_Unit_unit_type(nearby_enemies[i]);
+//        if(type == Worker) weight[i] = 1;
+//        else if(type == Knight) weight[i] = 100;
+//        else if(type == Mage) weight[i] = 10000;
+//        else if(type == Ranger) weight[i] = 2000;
+//        else if(type == Healer) weight[i] = 500;
+//        else if(type == Factory) weight[i] = 10000;
+//        else if(type == Rocket) weight[i] = 700;
+//    }
+//    vector<int> tmp(get_random_indices(weight));
+//    for(int i = 0; i < tmp.size(); i++)
+//    {
+//        if(bc_GameController_can_attack(gc, id, bc_Unit_id(nearby_enemies[tmp[i]])))
+//        {
+//            bc_GameController_attack(gc, id, bc_Unit_id(nearby_enemies[tmp[i]]));
+//            return 1;
+//        }
+//    }
+//    return 0;
+    if(!bc_GameController_is_attack_ready(gc, id)) return 0;
+    int max_priority = -1, min_heallth = 300, att_id;
     for(int i = 0; i < nearby_enemies.size(); i++)
     {
-        bc_UnitType type = bc_Unit_unit_type(nearby_enemies[i]);
-        if(type == Worker) weight[i] = 1;
-        else if(type == Knight) weight[i] = 100;
-        else if(type == Mage) weight[i] = 10000;
-        else if(type == Ranger) weight[i] = 2000;
-        else if(type == Healer) weight[i] = 500;
-        else if(type == Factory) weight[i] = 10000;
-        else if(type == Rocket) weight[i] = 700;
+        int ene_id = bc_Unit_id(nearby_enemies[i]);
+        if(!bc_GameController_can_sense_unit(gc, ene_id)) continue;
+        if(!bc_GameController_can_attack(gc, id, ene_id)) continue;;
+        Ptr<bc_Unit> enemy(bc_GameController_unit(gc, ene_id));
+        bc_UnitType type = bc_Unit_unit_type(enemy);
+        int priority = -1, health = bc_Unit_health(enemy);
+        if(type == Worker) priority = 0;
+        else if(type == Knight) priority = 1;
+        else if(type == Mage) priority = 6;
+        else if(type == Ranger) priority = 4;
+        else if(type == Healer) priority = 2;
+        else if(type == Factory) priority = 5;
+        else if(type == Rocket) priority = 3;
+        if(priority > max_priority) max_priority = priority, min_heallth = health, att_id = ene_id;
+        else if(priority == max_priority && health < min_heallth) min_heallth = health, att_id = ene_id;
     }
-    vector<int> tmp(get_random_indices(weight));
-    for(int i = 0; i < tmp.size(); i++)
+    if(max_priority != -1)
     {
-        if(bc_GameController_can_attack(gc, id, bc_Unit_id(nearby_enemies[tmp[i]])))
-        {
-            bc_GameController_attack(gc, id, bc_Unit_id(nearby_enemies[tmp[i]]));
-            return 1;
-        }
+        bc_GameController_attack(gc, id, att_id);
+        return 1;
     }
     return 0;
 }
@@ -1477,11 +1505,21 @@ int main() {
                 if(round >= print_round) cout<<"Factory"<<endl;
                 alive_factories.insert(id);
                 if(!bc_Unit_structure_is_built(unit)) continue;
-                try_unload(id, now_loc);
+                while(1)
+                    if(!try_unload(id, now_loc).first) break;
+                if(!bc_GameController_can_produce_robot(gc, id, Knight)) continue;
                 if(can_build_rocket && !need_worker && karb-20 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,3});
                 if(can_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
                 if(can_build_rocket && (typecount[0] <= building_rocket.size() || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
+                vector<Ptr<bc_Unit>> nearby_enemies;
+                get_nearby_enemies(now_loc, 10, nearby_enemies);
+                if(nearby_enemies.size()) for(int i = 0; i < 5; i++) weight[i] = (i==1?1:0);
+                else
+                {
+                    get_nearby_enemies(now_loc, 30, nearby_enemies);
+                    if(nearby_enemies.size()) for(int i = 0; i < 5; i++) weight[i] = (i==3?1:0);
+                }
                 try_produce(id, weight);
                 check_errors("Factory's turn");
             }
@@ -1543,7 +1581,8 @@ int main() {
                 }
                 else
                 {
-                    try_unload(id, now_loc);
+                    while(1)
+                        if(!try_unload(id, now_loc).first) break;
                 }
                 check_errors("Rocket's turn");
             }
