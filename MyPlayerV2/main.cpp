@@ -511,7 +511,7 @@ int get_total_damage(int loc)
 
 bool try_harvest(int id)
 {
-    for(int i = 0; i < 8; i++)
+    for(int i = 0; i < 9; i++)
         if(bc_GameController_can_harvest(gc, id, bc_Direction(i)))
         {
             bc_GameController_harvest(gc, id, bc_Direction(i));
@@ -890,7 +890,9 @@ bool walk_to(int id, int now_loc, int dest_loc)
     if(shortest_distance[now_loc][dest_loc] == -1) return 0;
     if(now_loc == dest_loc) return 0;
     unsigned int shortest_dist = -1, nearest_dir;
-    for(int i = 0; i < 8; i++)
+    vector<int> tmp(8); for(int i = 0; i < 8; i++) tmp[i] = i;
+    random_shuffle(tmp.begin(), tmp.end());
+    for(auto i:tmp)
     {
         if(out_of_bound(now_loc, i)) continue;
         if(shortest_distance[now_loc+go(i)][dest_loc] < shortest_dist)//So this direction is the preferred one
@@ -1187,6 +1189,20 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, int& now_loc)
     now_loc = bc_MapLocation_x_get(now_mlocation)+bc_MapLocation_y_get(now_mlocation)*map_width[my_Planet];
 }
 
+bool should_replicate(int id, int now_loc, int karb, int round)
+{
+    if(my_Planet == Mars && round >= 750) return 1;
+    if(can_build_rocket && karb-15 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size()) * 100) return 0;
+    for(int i = 0; i < 9; i++)
+        if(!out_of_bound(now_loc, i))
+        {
+            if(karbonite[now_loc+go(i)]) return 1;
+            Ptr<bc_Unit>& unit = units[now_loc+go(i)];
+            if(unit && bc_Unit_unit_type(unit) == Factory && !bc_Unit_structure_is_built(unit)) return 1;
+        }
+    return 0;
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -1342,16 +1358,14 @@ int main() {
 //                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
 //                TODO: Make every attempt into a function, and change the order based on some other numbers
                 if(round >= print_round) cout<<"Worker"<<endl;
-                if(!can_build_rocket && first_enemy && !enemies.size()) continue;
+                //if(!can_build_rocket && first_enemy && !enemies.size()) continue;
                 bool done = 0, dontmove = 0;
                 if(!done && (!can_build_rocket || my_factories.size() <= 3)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
-                if(!done && typecount[Worker] < passable_count[my_Planet]/20) //Don't want too many workers
-                    if((!can_build_rocket || karb-15 >= ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size()) * 100)
-                       || my_Planet == Mars && round >= 750)
-                    {
-                        auto tmprep = try_replicate(id, now_loc);
-                        if(tmprep.first) now_loc = tmprep.second, unit = units[now_loc], id = bc_Unit_id(unit);
-                    }
+                if(!done && should_replicate(id, now_loc, karb, round))
+                {
+                    auto tmprep = try_replicate(id, now_loc);
+                    if(tmprep.first) now_loc = tmprep.second, unit = units[now_loc], id = bc_Unit_id(unit);
+                }
                 if(!done) done = dontmove = try_build(id, now_loc); //Stay still to continue building
                 if(!dontmove && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc); //Stay still to continue harvesting
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8
@@ -1386,7 +1400,7 @@ int main() {
                 if(can_build_rocket && !need_worker && karb-20 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,3});
                 if(can_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
-                if(!typecount[0] || need_worker) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
+                if(can_build_rocket && (!typecount[0] || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 try_produce(id, weight);
                 check_errors("Factory's turn");
             }
