@@ -173,7 +173,7 @@ vit find_by_y(vit first, vit last, int y)
     return first+l;
 }
 
-int correspoinding_point(int loc, int sym)
+int corresponding_point(int loc, int sym)
 {
     int x = loc%map_width[my_Planet], y = loc/map_width[my_Planet];
     if(sym&1) x = map_width[my_Planet]-1-x;
@@ -257,7 +257,7 @@ void organize_map_info() //Organize all the map information
         for(int i = 3; i; i--)
         {
             bool correct = 1;
-            for(int loc = 0; loc < h*w; loc++) if(p[loc] != p[correspoinding_point(loc, i)])
+            for(int loc = 0; loc < h*w; loc++) if(p[loc] != p[corresponding_point(loc, i)])
             {
                 correct = 0;
                 break;
@@ -1005,7 +1005,7 @@ bool walk_to_enemy(int id, int now_loc)
 bool walk_to_opposite(int id, int loc, int start_loc)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    int dest_loc = correspoinding_point(start_loc, symmetry);
+    int dest_loc = corresponding_point(start_loc, symmetry);
     return walk_to(id, loc, dest_loc);
 }
 

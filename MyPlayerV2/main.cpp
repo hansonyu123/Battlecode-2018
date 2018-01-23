@@ -1066,7 +1066,7 @@ bool poked(int id, int now_loc)
     return poked(id, now_loc);
 }
 
-bool walk_to_enemy(int id, int now_loc)
+bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
     unsigned int nearest_dist = -1;
@@ -1085,6 +1085,13 @@ bool walk_to_enemy(int id, int now_loc)
         }
     }
     if(nearest_dist == -1) return 0;
+    else if((type == Mage && nearest_dist <= 3) || (type == Ranger && nearest_dist <= 5))
+    {
+        for(int i = 0; i < 8; i++)
+            if(!out_of_bound(now_loc, i) && shortest_distance[now_loc+go(i)][nearest_loc] > nearest_dist)
+                if(walk_to(id, now_loc, now_loc+go(i))) return 1;
+        return 0;
+    }
     return walk_to(id, now_loc, nearest_loc);
 }
 
@@ -1294,10 +1301,12 @@ bool should_replicate(int id, int now_loc, int karb, int round)
 {
     if(my_Planet == Mars && round >= 750) return 1;
     if(can_build_rocket && karb-15 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size()) * 100) return 0;
+    int karbo = 0;
     for(int i = 0; i < 9; i++)
         if(!out_of_bound(now_loc, i))
         {
-            if(karbonite[now_loc+go(i)]) return 1;
+            karbo += karbonite[now_loc+go(i)];
+            if(karbo >= 45) return 1;
             Ptr<bc_Unit>& unit = units[now_loc+go(i)];
             if(unit && bc_Unit_unit_type(unit) == Factory && !bc_Unit_structure_is_built(unit)) return 1;
         }
@@ -1387,6 +1396,7 @@ int main() {
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
                         else if(type == Rocket) alive_rockets.insert(bc_Unit_id(units[loc]));
+                        else alive_factories.insert(bc_Unit_id(units[loc]));
                     }
                     else
                     {
@@ -1447,6 +1457,21 @@ int main() {
         for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
         for(auto erase_id:to_erase) built_rocket.erase(erase_id), built_rocket_location.erase(erase_id);
         alive_rockets.clear(); to_erase.clear();
+        for(auto factory:my_factories) if(!alive_factories.count(factory.first))
+        {
+            to_erase.push_back(factory.first);
+            passable[my_Planet][factory.second] = 1;
+            for(int i = 0; i < map_height[my_Planet]*map_width[my_Planet]; i++)
+            {
+                if(!passable[my_Planet][i]) continue;
+                for(int k = 0; k < 8; k++)
+                    if(!out_of_bound(factory.second, k) && shortest_distance[i][factory.second+go(k)] != -1)
+                        shortest_distance[factory.second][i] = shortest_distance[i][factory.second]
+                        = min(shortest_distance[i][factory.second+go(k)]+1, shortest_distance[i][factory.second]);
+            }
+        }
+        for(auto erase_id:to_erase) my_factories.erase(erase_id);
+        alive_factories.clear();
 
         for(auto rocket:building_rocket)
         {
@@ -1492,6 +1517,14 @@ int main() {
                 }
             }
             if(cnt + built_rocket[rocket.first].second < 8) need_bot_rocket[rocket.first] = rocket.second;
+        }
+
+        for(auto factory:my_factories)
+        {
+            if(!bc_Unit_structure_is_built(units[factory.second])) continue;
+            vector<Ptr<bc_Unit>> nearby_enemies;
+            get_nearby_enemies(factory.second, 50, nearby_enemies);
+            if(nearby_enemies.size()) high_priority.push_back(factory.first);
         }
 
         vector<int> tmprandom(teammates.size()); for(int i = 0; i < teammates.size(); i++) tmprandom[i] = i;
@@ -1561,7 +1594,6 @@ int main() {
             else if(type == Factory)
             {
                 if(round >= print_round) cout<<"Factory"<<endl;
-                alive_factories.insert(id);
                 if(!bc_Unit_structure_is_built(unit)) continue;
                 while(1)
                     if(!try_unload(id, now_loc).first) break;
@@ -1587,7 +1619,7 @@ int main() {
                 bool done = 0;
                 try_javelin(id, now_loc, 10);
                 if(try_attack(id, now_loc, 2)) random_walk(id, now_loc), not_free.erase(id);
-                else if(walk_to_enemy(id, now_loc))
+                else if(walk_to_enemy(id, now_loc, type))
                 {
                     update_unit_location(id, unit, now_loc);
                     try_javelin(id, now_loc, 10);
@@ -1621,7 +1653,6 @@ int main() {
             else if(type == Rocket)
             {
                 if(round >= print_round) cout<<"Rocket"<<endl;
-                alive_rockets.insert(id);
                 if(my_Planet == Earth)
                 {
                     if(bc_Unit_structure_is_built(unit))
@@ -1651,7 +1682,7 @@ int main() {
                 if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
-                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc))
+                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
                         try_attack(id, now_loc, 30);
@@ -1668,7 +1699,7 @@ int main() {
                 if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
-                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc))
+                    if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
                         try_attack(id, now_loc, 50);
@@ -1678,27 +1709,6 @@ int main() {
                 check_errors("Ranger's turn");
             }
         }
-        for(auto rocket:building_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
-        for(auto erase_id:to_erase) building_rocket.erase(erase_id);
-        to_erase.clear();
-        for(auto rocket:built_rocket) if(!alive_rockets.count(rocket.first)) to_erase.push_back(rocket.first);
-        for(auto erase_id:to_erase) built_rocket.erase(erase_id), built_rocket_location.erase(erase_id);
-        alive_rockets.clear(); to_erase.clear();
-        for(auto factory:my_factories) if(!alive_factories.count(factory.first))
-        {
-            to_erase.push_back(factory.first);
-            passable[my_Planet][factory.second] = 1;
-            for(int i = 0; i < map_height[my_Planet]*map_width[my_Planet]; i++)
-            {
-                if(!passable[my_Planet][i]) continue;
-                for(int k = 0; k < 8; k++)
-                    if(!out_of_bound(factory.second, k) && shortest_distance[i][factory.second+go(k)] != -1)
-                        shortest_distance[factory.second][i] = shortest_distance[i][factory.second]
-                        = min(shortest_distance[i][factory.second+go(k)]+1, shortest_distance[i][factory.second]);
-            }
-        }
-        for(auto erase_id:to_erase) my_factories.erase(erase_id);
-        alive_factories.clear();
         need_worker = try_blueprint_rocket && !success_bluesprint_rocket;
         bc_GameController_next_turn(gc);
     }
