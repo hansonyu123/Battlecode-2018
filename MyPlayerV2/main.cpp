@@ -145,6 +145,7 @@ bool try_blueprint_rocket;
 bool success_bluesprint_rocket;
 bool need_worker;
 bool first_enemy;
+bool should_stay[65536];
 int invisible_loc;
 
 
@@ -1367,7 +1368,7 @@ int main() {
             int id = rocket.first, now_loc = rocket.second;
             for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && units[now_loc+go(i)])
                 if(bc_Unit_unit_type(units[now_loc+go(i)]) == Worker && bc_Unit_team(units[now_loc+go(i)]) == my_Team)
-                    working = 1;
+                    working = 1, should_stay[bc_Unit_id(units[now_loc+go(i)])] = 1;
             if(working) rockets_wait_for_work_round[id] = 0;
             else
             {
@@ -1432,13 +1433,14 @@ int main() {
                 if(round >= print_round) cout<<"Worker"<<endl;
                 //if(!can_build_rocket && first_enemy && !enemies.size()) continue;
                 bool done = 0, dontmove = 0;
-                if(worker_build_target[id] != -1)
+                if(worker_build_target[id] != -1 && !should_stay[id])
                 {
                     int tmp = worker_build_target[id];
                     worker_build_target[id] = -1;
                     if(bc_GameController_is_move_ready(gc, id))
                         done = dontmove = walk_to(id, now_loc, tmp);
                 }
+                should_stay[id] = 0;
                 if(!done && (!can_build_rocket || my_factories.size() <= 3)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
                 if(!done && should_replicate(id, now_loc, karb, round))
                 {
