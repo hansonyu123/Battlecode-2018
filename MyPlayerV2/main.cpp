@@ -59,6 +59,8 @@ inline void release(bc_VecMapLocation *vecmaplocation){delete_bc_VecMapLocation(
 inline void release(bc_ResearchInfo *research_info){delete_bc_ResearchInfo(research_info);}
 inline void release(bc_VecUnitID *units){delete_bc_VecUnitID(units);}
 inline void release(bc_OrbitPattern *orbitpattern){delete_bc_OrbitPattern(orbitpattern);}
+inline void release(bc_AsteroidPattern *asteroidpattern){delete_bc_AsteroidPattern(asteroidpattern);}
+inline void release(bc_AsteroidStrike *asteroidstrike){delete_bc_AsteroidStrike(asteroidstrike);}
 
 //Smart pointer. PLEASE ALWAYS USE SMART POINTER
 //This prevents memory leaks and saves time :)
@@ -151,6 +153,7 @@ bool should_stay[65536];
 int invisible_loc;
 bool should_build_rocket;
 bool rocket_just_blueprinted;
+Ptr<bc_AsteroidPattern> asteroid_pattern;
 
 
 vit find_by_x(vit first, vit last, int x)
@@ -273,6 +276,7 @@ void organize_map_info() //Organize all the map information
             }
         }
     }
+    else asteroid_pattern = bc_GameController_asteroid_pattern(gc);
 //    BFS shortest path
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
     for(int i = 0; i < h*w; i++) // BFS.
@@ -1320,6 +1324,21 @@ int main() {
         need_bot_rocket.clear();
         invisible_loc = -1;
         int idle_num = 0;
+
+        if(my_Planet == Mars)
+        {
+            if(bc_AsteroidPattern_has_asteroid(asteroid_pattern, round))
+            {
+                Ptr<bc_AsteroidStrike> tmp = bc_AsteroidPattern_asteroid(asteroid_pattern, round);
+                Ptr<bc_MapLocation> tmpmloc = bc_AsteroidStrike_location_get(tmp);
+                int loc = bc_MapLocation_x_get(tmpmloc)+bc_MapLocation_y_get(tmpmloc)*map_width[my_Planet];
+                int karbo = bc_AsteroidStrike_karbonite_get(tmp);
+                if(passable[Mars][loc])
+                    chunk_karbonite[chunk_label[loc]] += karbo;
+                karbonite[loc] += karbo;
+            }
+        }
+
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, i, j));
@@ -1526,7 +1545,6 @@ int main() {
 //                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
 //                TODO: Make every attempt into a function, and change the order based on some other numbers
                 if(round >= print_round) cout<<"Worker"<<endl;
-                //if(!can_build_rocket && first_enemy && !enemies.size()) continue;
                 bool done = 0, dontmove = 0;
                 if(worker_build_target[id] != -1 && !should_stay[id])
                 {
@@ -1664,7 +1682,7 @@ int main() {
                         if(try_attack(id, now_loc, 30)) last_attack_round[id] = round;
                     }
                 }
-                else if(invisible_loc != -1 && !(id%10)) explore_unknown(id, now_loc);
+                else if(invisible_loc != -1 && (!(id%10) || my_Planet == Mars)) explore_unknown(id, now_loc);
                 check_errors("Mage's turn");
             }
             else if(type == Ranger)
