@@ -101,7 +101,7 @@ bc_Planet my_Planet; //Current planet
 bc_Team my_Team; //Current team
 int map_height[2], map_width[2]; //The size of the Earth map and the Mars map.
 vector<bool> passable[2]; //The current map
-int karbonite[2500];
+int karbonite[2500]; //Karbonite values, but just for the planet this program is running on (could be Earth or Mars)
 vector<int> connected_square_num; //The size of connected components on Mars.
 int max_connected_num;
 int passable_count[2];
@@ -166,12 +166,29 @@ vit find_by_y(vit first, vit last, int y)
     return first+l;
 }
 
-int correspoinding_point(int loc, int sym)
+int corresponding_point(int loc, int sym)
 {
-    int x = loc%map_width[my_Planet], y = loc/map_width[my_Planet];
-    if(sym&1) x = map_width[my_Planet]-1-x;
+    /*
+        Returns the location of the given location projected according to the given symmetry
+    */
+    int x = loc%map_width[my_Planet], y = loc/map_width[my_Planet]; //Decode x and y values from loc
+    /*
+        Alright, this confused me at first, but it is the same as this:
+        switch(sym){
+            case 1:
+                x = map_width[my_Planet]-1-x; //Mirror over y-axis
+                break;
+            case 2:
+                y = map_height[my_Planet]-1-y; //Mirror over x-axis
+                break;
+            case 3:
+                x = map_width[my_Planet]-1-x;
+                y = map_height[my_Planet]-1-y; //Mirror over both axes
+        }  
+    */
+    if(sym&1) x = map_width[my_Planet]-1-x; // Witchcraft?? Black magic??
     if(sym&2) y = map_height[my_Planet]-1-y;
-    return map_width[my_Planet]*y+x;
+    return map_width[my_Planet]*y+x; //Return encoded x and y values
 }
 
 bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
@@ -230,37 +247,78 @@ inline int abs(int a){return (a>0)?a:-a;}
 
 void organize_map_info() //Organize all the map information
 {
-    for(int i = 0; i < 2; i++)
+    /*
+        1) Set map_height and map_width for each planet
+        2) Make a map of passable locations
+            -output passable[0,1] (vector)
+            -output passable_count[0,1] (number of passable locations on a planet)
+        3) Make a map of karbonite levels for local planet
+    */
+    for(int i = 0; i < 2; i++) //Loops twice, once for Earth, once for Mars
     {
+        //map_height[0] is height of Earth map
+        //map_height[1] is height of Mars map
         map_height[i] = bc_PlanetMap_height_get(planetmap[i]);
         map_width[i] = bc_PlanetMap_width_get(planetmap[i]);
+        
+        //passable is an array of two vectors. Here each vector is resized to hold passable information for entire map
         passable[i].resize(map_height[i]*map_width[i]);
+        
         for(int x = 0; x < map_width[i]; x++) for(int y = 0; y < map_height[i]; y++) //Read in the map
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(bc_Planet(i), x, y));
+            // This line has two parts:
+            // 1) Checks if the given location is passable, and logs that in the passable[i] vector
+            // 2) If passable, increments the passable_count[i] value
             passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
-            if(bc_Planet(i) == my_Planet) karbonite[i] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
+            
+            // Creates a map of karbonite values for the local planet
+            // I think karbonite[i] should be changed to karbonite[map_width[i]*y+x]
+            // Changed
+            if(bc_Planet(i) == my_Planet) karbonite[map_width[i]*y=x] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
         }
     }
-    int h = map_height[my_Planet], w = map_width[my_Planet];
-    vector<bool>& p = passable[my_Planet];
+    int h = map_height[my_Planet], w = map_width[my_Planet]; //Placeholders for convenience
+    vector<bool>& p = passable[my_Planet]; //Also a placeholder for convenience
+    
 //    Guess the symmetry
     if(my_Planet == Earth)
     {
-        for(int i = 3; i; i--)
+        bool found = 0; // To optimize slightly, we assume that the symmetry is a third variant if the first two don't pass
+        for(int i = 2; i; i--)
         {
             bool correct = 1;
-            for(int loc = 0; loc < h*w; loc++) if(p[loc] != p[correspoinding_point(loc, i)])
-            {
-                correct = 0;
-                break;
+            // For loop checks each position in the map
+            // If any position does not match with its corresponding point with the current symmetry (i), then it's not correct.
+            if(i==2){ // Reflect over y-axis (x changes)
+                for(int loc = 0; loc < h*w/2; loc++) 
+                    if(p[loc] != p[corresponding_point(loc, i)])
+                    {
+                        correct = 0;
+                        break;
+                    }
+            }
+            else{ // Reflect over x-axis (y changes)
+                for(int loc = 0; loc < h*w/2; loc++) //Note this checks half the map, plus the other half through corresponding_point.
+                                                        //Also, we could change it to loc+=2 or 3 to have a lighter, faster scan that would most likely work
+                    int temp_x = loc/w, temp_y = loc%h; // Convert from row-major to column-major
+                    int inverted_loc = h*temp_y+x;
+                    if(p[inverted_loc] != p[corresponding_point(inverted_loc, i)])
+                    {
+                        correct = 0;
+                        break;
+                    }
             }
             if(correct)
             {
+                found = 1;
                 symmetry = i;
                 break;
             }
         }
+        // If the symmetry is neither the first nor the second, it must be the third
+        if(!found) symmetry = 3;
+        printf(symmetry);
     }
 //    BFS shortest path
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
@@ -983,7 +1041,7 @@ bool walk_to_enemy(int id, int now_loc)
 bool walk_to_opposite(int id, int loc, int start_loc)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    int dest_loc = correspoinding_point(start_loc, symmetry);
+    int dest_loc = corresponding_point(start_loc, symmetry);
     return walk_to(id, loc, dest_loc);
 }
 
