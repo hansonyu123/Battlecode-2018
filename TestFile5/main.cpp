@@ -155,7 +155,6 @@ bool should_build_rocket;
 bool rocket_just_blueprinted;
 Ptr<bc_AsteroidPattern> asteroid_pattern;
 int waiting_for_rocket;
-int have_enemy_round;
 
 
 vit find_by_x(vit first, vit last, int x)
@@ -1333,8 +1332,8 @@ bool try_snipe(int id)
 int main() {
     printf("Meow Starting\n");
 
-    srand(time(NULL));
-    gen.seed(time(NULL));
+    srand(7122);
+    gen.seed(7122);
     printf("Connecting to manager...\n");
 
     gc = new_bc_GameController();
@@ -1444,9 +1443,6 @@ int main() {
             }
             else if(passable[my_Planet][i+j*map_width[my_Planet]]) invisible_loc = i+j*map_width[my_Planet];
         }
-
-        if(enemies.size()) have_enemy_round++;
-        else have_enemy_round = 0;
 
         should_build_rocket = round >= 425;
         if(!should_build_rocket && can_build_rocket)
@@ -1803,8 +1799,7 @@ int main() {
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
                 try_attack(id, now_loc, 50);
-                if(round - last_attack_round[id] >= 10 && have_enemy_round >= 10 && try_snipe(id)) last_attack_round[id] = round;
-                else if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
                     if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
