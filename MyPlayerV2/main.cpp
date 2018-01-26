@@ -190,9 +190,9 @@ int corresponding_point(int loc, int sym)
     return map_width[my_Planet]*y+x;
 }
 
-bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
+bool out_of_bound(int loc, int dir, bc_Planet planet) //Test if going in the direction dir from (loc%w, loc/w) will go out the map
 {
-    int h = map_height[my_Planet], w = map_width[my_Planet];
+    int h = map_height[planet], w = map_width[planet];
     if(dir == 0) return loc/w == h-1;
     if(dir == 1) return loc/w == h-1 || loc%w == w-1;
     if(dir == 2) return loc%w == w-1;
@@ -204,11 +204,21 @@ bool out_of_bound(int loc, int dir) //Test if going in the direction dir from (l
     if(dir == 8) return false;
 }
 
-int go(int dir) //The number added to go in the direction dir
+bool out_of_bound(int loc, int dir)
 {
-    int w = map_width[my_Planet];
+    return out_of_bound(loc, dir, my_Planet);
+}
+
+int go(int dir, bc_Planet planet) //The number added to go in the direction dir
+{
+    int w = map_width[planet];
     int a[9] = {w, w+1, 1, -w+1, -w, -w-1, -1, w-1, 0};
     return a[dir];
+}
+
+int go(int dir)
+{
+    return go(dir, my_Planet);
 }
 
 int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
@@ -218,9 +228,9 @@ int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
     int ans = 1;
     for(int i = 0; i < 8; i++)
     {
-        if(out_of_bound(s, i)) continue;
-        if(!p[s+go(i)] || visited[s+go(i)]) continue;
-        ans += dfs(f, s+go(i), p, visited, fa);
+        if(out_of_bound(s, i, Mars)) continue;
+        if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) continue;
+        ans += dfs(f, s+go(i, Mars), p, visited, fa);
     }
     return ans;
 }
@@ -277,7 +287,7 @@ void organize_map_info() //Organize all the map information
 
         // Check for symmetry = 1
         for(int loc = 0; loc < h*w/2; loc++){ //Note this checks half the map, plus the other half through corresponding_point.
-            int temp_x = loc/w, temp_y = loc%h; // Convert from row-major to column-major
+            int temp_x = loc/h, temp_y = loc%h; // Convert from row-major to column-major
             int inverted_loc = h*temp_y+temp_x;
             if(p[inverted_loc] != p[corresponding_point(inverted_loc, 1)])
             {
@@ -289,6 +299,7 @@ void organize_map_info() //Organize all the map information
         else symmetry = possibly_1 ? 1 : 2;
     }
     else asteroid_pattern = bc_GameController_asteroid_pattern(gc);
+
 //    BFS shortest path
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
     for(int i = 0; i < h*w; i++) // BFS.
@@ -398,7 +409,6 @@ void organize_map_info() //Organize all the map information
                 else if((can_see[j]^can_see[j+go(k)]).count() <= h*w/10/min(_ds__sz[_ds__find(j)], _ds__sz[_ds__find(j+go(k))])) _ds__union(j, j+go(k));
             }
     }
-
     fill(chunk_label, chunk_label+h*w, -1);
     for(int i = 0; i < h*w; i++) if(p[i] && _ds__p[i] == i) chunk_label[i] = chunk_num++;
     for(int i = 0; i < h*w; i++) if(p[i]) chunk_label[i] = chunk_label[_ds__find(i)];
@@ -440,7 +450,6 @@ void organize_map_info() //Organize all the map information
         auto tmp = make_pair(distance_to_wall[i], -abs(i%w-chunk_centroid[label].first) - abs(i/w-chunk_centroid[label].second));
         if(tmp > chunk_dist_to_wall[label]) chunk_dist_to_wall[label] = tmp, chunk_rep[label] = i;
     }
-
 //    DFS connected component on Mars for rockets landing
     if(my_Planet == Earth)
     {
@@ -448,6 +457,7 @@ void organize_map_info() //Organize all the map information
         vector<bool>& q = passable[Mars];
         vector<int> fa(h*w);
         fill(visited.begin(), visited.end(), 0);
+        visited.resize(h*w);
         connected_square_num.resize(h*w);
         for(int i = 0; i < h*w; i++) if(q[i])
         {
@@ -457,6 +467,8 @@ void organize_map_info() //Organize all the map information
         }
     }
     check_errors("Organizing");
+    cout<<"HEY"<<endl;
+    return;
 }
 
 bool is_robot(bc_UnitType s) //Check if a unit is a robot.
@@ -1091,13 +1103,13 @@ pair<double, double> worker_gravity_force(int now_loc)
                     if(bc_Unit_structure_is_built(units[i]))
                     {
                         double lost_health = bc_Unit_max_health(units[i])-bc_Unit_health(units[i]);
-                        double dmass = lost_health/bc_Unit_max_health(units[i])*(bc_UnitType_blueprint_cost(type)+50)-10;
+                        double dmass = lost_health/bc_Unit_max_health(units[i])*(bc_UnitType_blueprint_cost(type)+50)-20;
                         mass += dmass;
                     }
-                    else mass += bc_UnitType_blueprint_cost(type)-20;
+                    else mass += bc_UnitType_blueprint_cost(type)-40;
                 }
             }
-            else if(is_robot(type) && type != Worker && type != Healer) mass -= 30;
+            else if(is_robot(type) && type != Worker && type != Healer) mass -= 60;
         }
 //        Calculate the force
         double difx = x-now_x, dify = y-now_y;
@@ -1264,13 +1276,13 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, int& now_loc)
 bool should_replicate(int id, int now_loc, int karb, int round)
 {
     if(my_Planet == Mars && round >= 750) return 1;
-    if(should_build_rocket && karb-15 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size()) * 100) return 0;
+    if(should_build_rocket && karb-60 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size()) * 200) return 0;
     int karbo = 0;
     for(int i = 0; i < 9; i++)
         if(!out_of_bound(now_loc, i))
         {
             karbo += karbonite[now_loc+go(i)];
-            if(karbo >= 45) return 1;
+            if(karbo >= 90) return 1;
             Ptr<bc_Unit>& unit = units[now_loc+go(i)];
             if(unit && bc_Unit_unit_type(unit) == Factory && !bc_Unit_structure_is_built(unit)) return 1;
         }
@@ -1333,8 +1345,8 @@ bool try_snipe(int id)
 int main() {
     printf("Meow Starting\n");
 
-    srand(time(NULL));
-    gen.seed(time(NULL));
+    srand(7122);
+    gen.seed(7122));
     printf("Connecting to manager...\n");
 
     gc = new_bc_GameController();
@@ -1347,6 +1359,7 @@ int main() {
     int print_round = 1001;
 
     organize_map_info();
+    cout<<"HEY"<<endl;
     orbit_pattern = bc_GameController_orbit_pattern(gc);
     cout<<"I guess this map has a symmetry of "<<symmetry<<endl;
 
@@ -1511,9 +1524,9 @@ int main() {
             int max_willingess = 0, index;
             for(int i = 0; i < teammates.size(); i++)
                 if(max_willingess < willingness[i]) max_willingess = willingness[i], start_loc = loc[i], index = i;
-            high_priority.push_back(index);
+//            high_priority.push_back(index);
         }
-        else if(karb >= 100 && !should_build_rocket)
+        else if(karb >= 200 && !should_build_rocket && my_Planet == Earth)
         {
             int max_willingness = -100000, index;
             for(int i = 0; i < teammates.size(); i++)
@@ -1650,7 +1663,7 @@ int main() {
             if(round >= print_round) cout<<"START POKED"<<endl;
             if(poked(id, now_loc)) update_unit_location(id, unit, now_loc);
             if(round >= print_round) cout<<"END POKED"<<endl;
-            if(type != Worker && (round >= 425 || round - last_attack_round[id] >= 50))
+            if(type != Worker && (round >= 425 || idle_round[id] >= 5))
                 if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
 //            Here is what a worker will do
             if(type == Worker)
@@ -1706,7 +1719,7 @@ int main() {
                 while(1)
                     if(!try_unload(id, now_loc).first) break;
                 if(!bc_GameController_can_produce_robot(gc, id, Knight)) continue;
-                if(should_build_rocket && !need_worker && karb-20 < ((teammates.size()+7)/12-building_rocket.size()-built_rocket.size())*100 && typecount[0]) continue;
+                if(should_build_rocket && !need_worker && karb-40 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size())*200 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,3});
                 if(should_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
                 if(should_build_rocket && (typecount[0] <= building_rocket.size() || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
