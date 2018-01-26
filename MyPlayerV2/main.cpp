@@ -1346,7 +1346,7 @@ int main() {
     printf("Meow Starting\n");
 
     srand(7122);
-    gen.seed(7122));
+    gen.seed(7122);
     printf("Connecting to manager...\n");
 
     gc = new_bc_GameController();
@@ -1681,7 +1681,7 @@ int main() {
                         done = dontmove = walk_to(id, now_loc, tmp);
                 }
                 should_stay[id] = 0;
-                if(!done && (!should_build_rocket || my_factories.size() <= 3)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
+                if(!done && (!should_build_rocket || my_factories.size() <= 4)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
                 if(!done && should_replicate(id, now_loc, karb, round))
                 {
                     auto tmprep = try_replicate(id, now_loc);
@@ -1690,7 +1690,7 @@ int main() {
                 if(!done) done = dontmove = try_build(id, now_loc); //Stay still to continue building
                 if(!dontmove && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc); //Stay still to continue harvesting
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8
-                   && should_build_rocket && bc_GameController_karbonite(gc) >= 75)
+                   && should_build_rocket && bc_GameController_karbonite(gc) >= 150)
                     done = dontmove = try_blueprint(id, now_loc, Rocket); //Stay still to build rocket
                 if(!done) done = dontmove = try_repair(id, now_loc); //Stay still to continue repairing
                 if(!dontmove && can_move(id))
