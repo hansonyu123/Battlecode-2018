@@ -74,62 +74,62 @@ def main():
 
     if isNewer(latestVersion, currentInfo['version']):
         print("There is a newer version available.\nCurrent version is: %s. The new version is %s." % (currentInfo['version'], latestVersion))
-        shouldDownload = input("Download? (Y/N) > ").lower() == "y"
-        if shouldDownload:
-            newestUrl = baseUrl + ("%s/%s.zip" % (latestVersion, currentInfo['system']))
-            downloadLocation = os.path.join(directory, zipFileName)
-            if os.path.exists(downloadLocation):
-                print("Removing previous archive...")
-                os.remove(downloadLocation)
-                print("Deleted old archive.")
-            print("Downloading new client... This could take a while.")
-            urlretrieve(newestUrl, downloadLocation, downloadProgress)
-            print()
-            print("Successfully downloaded files. ")
-            outputDirectory = os.path.join(directory, viewerDirectory)
-            if os.path.exists(outputDirectory):
-                print("Removing previous client")
-                shutil.rmtree(outputDirectory, True)
-                print("Successfully removed previous client.")
-            print("Extracting from archive...")
-            zip_ref = zipfile.ZipFile(downloadLocation, "r")
-            zip_ref.extractall(outputDirectory)
-            zip_ref.close()
-            print("Extracted fully!")
-            if os.path.exists(downloadLocation):
-                print("Cleaning up downloads...")
-                os.remove(downloadLocation)
-                print("Cleaned up")
-            try:
-                if currentInfo['system'] == 'Linux32':
-                    print("Fixing permissions...")
-                    print("chmod 777 viewer_latest/Linux32/battleclient18.x86")
-                    os.system("chmod 777 viewer_latest/Linux32/battleclient18.x86")
-                    print("Done fixing permissions!")
-                elif currentInfo['system'] == 'Linux64':
-                    print("Fixing permissions...")
-                    print("chmod 777 viewer_latest/Linux64/battleclient18.x86_64")
-                    os.system("chmod 777 viewer_latest/Linux64/battleclient18.x86_64")
-                    print("Done fixing permissions!")
-                if currentInfo['system'] == 'Mac':
-                    print("Fixing permissions...")
-                    print("chmod -R 777 viewer_latest/Mac/battleclient18.app")
-                    os.system("chmod -R 777 viewer_latest/Mac/battleclient18.app")
-                    print("Done fixing permissions!")
-            except:
-                pass
-            print("Updating current version number...")
-            newInfo = {}
-            newInfo['version'] = latestVersion
-            newInfo['system'] = currentInfo['system']
-            currentInfoFile = open(currentInfoFileLocation, "w")
-            currentInfo = json.dump(newInfo, currentInfoFile)
-            currentInfoFile.close()
-            print("All set! The viewer is in: %s" % outputDirectory)
-        else:
-            print("Not downloading - your system has not been changed.")
     else:
-        print("No updates!")
+        print("No updates! Would you like to reinstall the viewer anyway?")
+    shouldDownload = input("Download? (Y/N) > ").lower() == "y"
+    if shouldDownload:
+        newestUrl = baseUrl + ("%s/%s.zip" % (latestVersion, currentInfo['system']))
+        downloadLocation = os.path.join(directory, zipFileName)
+        if os.path.exists(downloadLocation):
+            print("Removing previous archive...")
+            os.remove(downloadLocation)
+            print("Deleted old archive.")
+        print("Downloading new client... This could take a while.")
+        urlretrieve(newestUrl, downloadLocation, downloadProgress)
+        print()
+        print("Successfully downloaded files. ")
+        outputDirectory = os.path.join(directory, viewerDirectory)
+        if os.path.exists(outputDirectory):
+            print("Removing previous client")
+            shutil.rmtree(outputDirectory, True)
+            print("Successfully removed previous client.")
+        print("Extracting from archive...")
+        zip_ref = zipfile.ZipFile(downloadLocation, "r")
+        zip_ref.extractall(outputDirectory)
+        zip_ref.close()
+        print("Extracted fully!")
+        if os.path.exists(downloadLocation):
+            print("Cleaning up downloads...")
+            os.remove(downloadLocation)
+            print("Cleaned up")
+        try:
+            if currentInfo['system'] == 'Linux32':
+                print("Fixing permissions...")
+                print("chmod 777 viewer_latest/Linux32/battleclient18.x86")
+                os.system("chmod 777 viewer_latest/Linux32/battleclient18.x86")
+                print("Done fixing permissions!")
+            elif currentInfo['system'] == 'Linux64':
+                print("Fixing permissions...")
+                print("chmod 777 viewer_latest/Linux64/battleclient18.x86_64")
+                os.system("chmod 777 viewer_latest/Linux64/battleclient18.x86_64")
+                print("Done fixing permissions!")
+            if currentInfo['system'] == 'Mac':
+                print("Fixing permissions...")
+                print("chmod -R 777 viewer_latest/Mac/battleclient18.app")
+                os.system("chmod -R 777 viewer_latest/Mac/battleclient18.app")
+                print("Done fixing permissions!")
+        except:
+            pass
+        print("Updating current version number...")
+        newInfo = {}
+        newInfo['version'] = latestVersion
+        newInfo['system'] = currentInfo['system']
+        currentInfoFile = open(currentInfoFileLocation, "w")
+        currentInfo = json.dump(newInfo, currentInfoFile)
+        currentInfoFile.close()
+        print("All set! The viewer is in: %s" % outputDirectory)
+    else:
+        print("Not downloading - your system has not been changed.")
 
 if __name__ == "__main__":
     main()
