@@ -156,6 +156,7 @@ bool rocket_just_blueprinted;
 Ptr<bc_AsteroidPattern> asteroid_pattern;
 int waiting_for_rocket;
 int have_enemy_round;
+int left_worker_num;
 
 
 vit find_by_x(vit first, vit last, int x)
@@ -581,6 +582,7 @@ pair<bool,int> try_replicate(int id, int loc)
             Ptr<bc_MapLocation> tmpmloc(new_bc_MapLocation(my_Planet, new_loc%map_width[my_Planet], new_loc/map_width[my_Planet]));
             Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, tmpmloc));
             units[new_loc] = tmp;
+            left_worker_num--;
             return make_pair(1, new_loc);
         }
     return make_pair(0,-1);
@@ -1045,22 +1047,30 @@ bool poked(int id, int now_loc)
 bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    unsigned int nearest_dist = -1;
-    int nearest_loc;
+    unsigned int nearest_dist = -1, nearest_factory_dist = -1;
+    int nearest_loc, nearest_factory_loc;
     vector<int> tmp(enemies.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
     random_shuffle(tmp.begin(), tmp.end());
     int h = map_height[my_Planet], w = map_width[my_Planet];
     int nowx = now_loc%w, nowy = now_loc/w;
+    bool ignore_worker = get_total_damage(now_loc) && type == Knight;
     for(int i = 0; i < enemies.size(); i++)
     {
         int x = enemies[i].first.first, y = enemies[i].first.second;
+        if(ignore_worker && bc_Unit_unit_type(enemies[i].second) == Worker) continue;
         if(shortest_distance[y*w+x][nowy*w+nowx] < nearest_dist)
         {
             nearest_dist = shortest_distance[y*w+x][nowy*w+nowx];
             nearest_loc = y*w+x;
         }
+        if(bc_Unit_unit_type(enemies[i].second) == Factory && shortest_distance[y*w+x][nowy*w+nowx] < nearest_factory_dist)
+        {
+            nearest_factory_dist = shortest_distance[y*w+x][nowy*w+nowx];
+            nearest_factory_loc = y*w+x;
+        }
     }
     if(nearest_dist == -1) return 0;
+    if(type == Knight && nearest_factory_dist < 2*nearest_dist) return walk_to(id, now_loc, nearest_factory_loc);
     else if((type == Mage && nearest_dist <= 3) || (type == Ranger && nearest_dist <= 5))
     {
         for(int i = 0; i < 8; i++)
@@ -1276,13 +1286,14 @@ void update_unit_location(int id, Ptr<bc_Unit>& unit, int& now_loc)
 bool should_replicate(int id, int now_loc, int karb, int round)
 {
     if(my_Planet == Mars && round >= 750) return 1;
-    if(should_build_rocket && karb-60 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size()) * 200) return 0;
+    if(!left_worker_num) return 0;
+    if(should_build_rocket && karb-60 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size()) * 150) return 0;
     int karbo = 0;
     for(int i = 0; i < 9; i++)
         if(!out_of_bound(now_loc, i))
         {
             karbo += karbonite[now_loc+go(i)];
-            if(karbo >= 90) return 1;
+            if(karbo >= 90-90*karb/250) return 1;
             Ptr<bc_Unit>& unit = units[now_loc+go(i)];
             if(unit && bc_Unit_unit_type(unit) == Factory && !bc_Unit_structure_is_built(unit)) return 1;
         }
@@ -1342,6 +1353,17 @@ bool try_snipe(int id)
     return 0;
 }
 
+int dfs_for_karbonite(int loc, vector<bool>& visited)
+{
+    if(visited[loc]) return 0;
+    int ans = karbonite[loc];
+    visited[loc] = 1;
+    if(!passable[my_Planet][loc]) return ans;
+    for(int i = 0; i < 8; i++) if(!out_of_bound(loc, i))
+        ans += dfs_for_karbonite(loc+go(i), visited);
+    return ans;
+}
+
 int main() {
     printf("Meow Starting\n");
 
@@ -1369,10 +1391,10 @@ int main() {
     fill(target_rocket, target_rocket+65536, -1);
 
     bc_GameController_queue_research(gc, Worker);
+    bc_GameController_queue_research(gc, Healer);
+    bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Rocket);
-    bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Healer);
@@ -1467,13 +1489,13 @@ int main() {
             for(auto teammate:teammates)
             {
                 bc_UnitType type = bc_Unit_unit_type(teammate.second);
-                if(!is_robot(type) || type == Worker) continue;
+                if(!is_robot(type) || type == Worker || type == Healer) continue;
                 int now_loc = teammate.first.first+teammate.first.second*map_width[my_Planet];
                 vector<Ptr<bc_Unit>> nearby_teammates;
                 get_nearby_enemies(now_loc, 10, nearby_teammates);
                 bool is_idle = 1;
                 for(auto nearby_teammate:nearby_teammates)
-                    if(round - last_attack_round[bc_Unit_id(nearby_teammate)] < 10)
+                    if(round - last_attack_round[bc_Unit_id(nearby_teammate)] < 50)
                     {
                         is_idle = 0;
                         break;
@@ -1482,17 +1504,18 @@ int main() {
                 if(rocket_just_blueprinted) idle_round[id] = 0;
                 if(is_idle) idle_round[id]++;
                 else idle_round[id] = 0;
-                if(idle_round[id] >= 10) idle_num++;
+                if(idle_round[id] >= 30) idle_num++;
             }
-            if(idle_num >= (typecount[1]+typecount[2]+typecount[3]+typecount[4])*4/5) should_build_rocket = 1;
+            if(idle_num >= (typecount[1]+typecount[2]+typecount[3])*4/5) should_build_rocket = 1;
         }
+        rocket_just_blueprinted = 0;
         if(should_build_rocket) waiting_for_rocket++;
 
         if(enemies.size()) first_enemy = 1;
 
         vector<int> high_priority;
 //        If cannot launch rockets for a long time, then kill teammates for spaces
-        if(waiting_for_rocket >= 100)
+        if(waiting_for_rocket >= 150 && my_Planet == Earth)
         {
             for(auto teammate:teammates) if(bc_Unit_unit_type(teammate.second) == Worker || bc_Unit_unit_type(teammate.second) == Factory)
             {
@@ -1512,8 +1535,11 @@ int main() {
         {
             vector<int> willingness(teammates.size()); //willingness to take teammates[i] as start_loc
             vector<int> loc(teammates.size());
+            vector<bool> visited(map_width[my_Planet]*map_height[my_Planet]);
+            int expected_karbonite = 0;
             for(int i = 0; i < teammates.size(); i++)
-                loc[i] = teammates[i].first.first+teammates[i].first.second*map_width[my_Planet];
+                loc[i] = teammates[i].first.first+teammates[i].first.second*map_width[my_Planet],
+                expected_karbonite += dfs_for_karbonite(loc[i], visited);
             for(int i = 0; i < teammates.size(); i++)
             {
                 for(int j = 0; j < teammates.size(); j++)
@@ -1524,6 +1550,8 @@ int main() {
             int max_willingess = 0, index;
             for(int i = 0; i < teammates.size(); i++)
                 if(max_willingess < willingness[i]) max_willingess = willingness[i], start_loc = loc[i], index = i;
+            left_worker_num = expected_karbonite/120 - teammates.size();
+            cout<<expected_karbonite<<' '<<left_worker_num<<endl;
 //            high_priority.push_back(index);
         }
         else if(karb >= 200 && !should_build_rocket && my_Planet == Earth)
@@ -1663,7 +1691,7 @@ int main() {
             if(round >= print_round) cout<<"START POKED"<<endl;
             if(poked(id, now_loc)) update_unit_location(id, unit, now_loc);
             if(round >= print_round) cout<<"END POKED"<<endl;
-            if(type != Worker && (round >= 425 || idle_round[id] >= 5))
+            if(type != Worker && (round >= 425 || round-last_attack_round[id] >= 50))
                 if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
 //            Here is what a worker will do
             if(type == Worker)
@@ -1682,7 +1710,7 @@ int main() {
                 }
                 should_stay[id] = 0;
                 if(!done && (!should_build_rocket || my_factories.size() <= 4)) done = dontmove = try_blueprint(id, now_loc, Factory); //Stay still to build factory
-                if(!done && should_replicate(id, now_loc, karb, round))
+                if(!done && should_replicate(id, now_loc, karb, round) && (my_Planet == Mars || typecount[0] <= passable_count[my_Planet]/20))
                 {
                     auto tmprep = try_replicate(id, now_loc);
                     if(tmprep.first) now_loc = tmprep.second, unit = units[now_loc], id = bc_Unit_id(unit);
@@ -1721,16 +1749,17 @@ int main() {
                 if(!bc_GameController_can_produce_robot(gc, id, Knight)) continue;
                 if(should_build_rocket && !need_worker && karb-40 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size())*200 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,3});
+                if(round <= 150) weight[1] = 10, weight[4] = 0;
                 if(should_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
                 if(should_build_rocket && (typecount[0] <= building_rocket.size() || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 vector<Ptr<bc_Unit>> nearby_enemies;
-                get_nearby_enemies(now_loc, 10, nearby_enemies);
+                get_nearby_enemies(now_loc, 30, nearby_enemies);
                 if(nearby_enemies.size()) for(int i = 0; i < 5; i++) weight[i] = (i==1?1:0);
-                else
+                /*else
                 {
-                    get_nearby_enemies(now_loc, 30, nearby_enemies);
+                    get_nearby_enemies(now_loc, 40, nearby_enemies);
                     if(nearby_enemies.size()) for(int i = 0; i < 5; i++) weight[i] = (i==3?1:0);
-                }
+                }*/
                 try_produce(id, weight);
                 check_errors("Factory's turn");
             }
@@ -1739,9 +1768,11 @@ int main() {
                 if(round >= print_round) cout<<"Knight"<<endl;
                 bool done = 0;
                 if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round;
-                if(try_attack(id, now_loc, 2)) random_walk(id, now_loc), last_attack_round[id] = round;
-                else if(walk_to_enemy(id, now_loc, type))
+                if(try_attack(id, now_loc, 2)) last_attack_round[id] = round;
+                else
                 {
+                    if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                    else walk_to_enemy(id, now_loc, type);
                     update_unit_location(id, unit, now_loc);
                     if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round;
                     if(try_attack(id, now_loc, 2)) last_attack_round[id] = round;
@@ -1799,7 +1830,7 @@ int main() {
             else if(type == Mage)
             {
                 if(round >= print_round) cout<<"Mage"<<endl;
-                try_attack(id, now_loc, 30);
+                if(try_attack(id, now_loc, 30)) last_attack_round[id] = round;
                 if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
@@ -1815,9 +1846,9 @@ int main() {
             else if(type == Ranger)
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
-                try_attack(id, now_loc, 50);
+                if(try_attack(id, now_loc, 50)) last_attack_round[id] = round;
                 if(round - last_attack_round[id] >= 10 && have_enemy_round >= 10 && try_snipe(id)) last_attack_round[id] = round;
-                else if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                else if(my_Planet == Earth && !first_enemy && typecount[2] >= 8) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
                     if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
