@@ -1133,6 +1133,9 @@ bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
 bool walk_to_heal(int id, int now_loc, int round)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
+    vector<Ptr<bc_Unit>> nearby_teammates;
+    get_nearby_teammates(now_loc, 30, nearby_teammates);
+    for(auto teammate:nearby_teammates) if(bc_Unit_health(teammate) != bc_Unit_max_health(teammate)) return 0;
     int max_willingness = 0;
     int dest_loc;
     vector<int> tmp(teammates.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
@@ -1672,7 +1675,7 @@ int main() {
         if(enemies.size()) have_enemy_round++;
         else have_enemy_round = 0;
 
-        should_build_rocket = round >= 425;
+        should_build_rocket = round >= 500;
         if(!should_build_rocket && can_build_rocket)
         {
             for(auto teammate:teammates)
@@ -1869,6 +1872,20 @@ int main() {
                 vector<Ptr<bc_Unit>> nearby_enemies;
                 get_nearby_enemies(factory.second, 50, nearby_enemies);
                 if(nearby_enemies.size()) high_priority.push_back(factory.first);
+                int lost_health = 300 - bc_Unit_health(units[factory.second]);
+                int id = factory.first, now_loc = factory.second;
+                int x = now_loc%map_width[my_Planet], y = now_loc/map_width[my_Planet];
+                for(int i = -lost_health/20; i <= lost_health/20; i++)
+                {
+                    if(x+i < 0 || x+i >= map_width[my_Planet]) continue;
+                    for(int j = -lost_health/20; j <= lost_health/20; j++)
+                    {
+                        if(y+j < 0 || y+j >= map_height[my_Planet]) continue;
+                        int new_loc = (x+i) + (y+j)*map_width[my_Planet];
+                        if(units[new_loc] && bc_Unit_unit_type(units[new_loc]) == Worker && bc_Unit_team(units[new_loc]) == my_Team)
+                            worker_build_target[bc_Unit_id(units[new_loc])] = now_loc;
+                    }
+                }
             }
         }
 
@@ -1906,8 +1923,9 @@ int main() {
                 }
                 should_stay[id] = 0;
                 if(!done && try_build(id, now_loc)) done = dontmove = 1; //Stay still to continue building
+                if(!done && try_repair(id, now_loc)) done = dontmove = 1; //Stay still to continue repairing
                 if(can_harvest(id)) to_be_harvest(now_loc);
-                else if(!dontmove && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc);
+                else if(!dontmove && round <= 150 && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc);
                 if(!done && should_replicate(id, now_loc, karb, round) && (my_Planet == Mars || typecount[0] <= passable_count[my_Planet]/20))
                 {
                     auto tmprep = replicate_to_harvest(id, now_loc);
@@ -1925,7 +1943,6 @@ int main() {
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8
                    && should_build_rocket && bc_GameController_karbonite(gc) >= 150 && worker_build_target[id] == -1)
                     if(try_blueprint(id, now_loc, Rocket)) done = dontmove = 1; //Stay still to build rocket
-                if(!done && try_repair(id, now_loc)) done = dontmove = 1; //Stay still to continue repairing
                 if(!dontmove && can_move(id))
                 {
                     if(!try_walk_to_rocket(id, type, now_loc))
