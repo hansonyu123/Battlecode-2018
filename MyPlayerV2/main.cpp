@@ -1925,7 +1925,7 @@ int main() {
                 if(!done && try_build(id, now_loc)) done = dontmove = 1; //Stay still to continue building
                 if(!done && try_repair(id, now_loc)) done = dontmove = 1; //Stay still to continue repairing
                 if(can_harvest(id)) to_be_harvest(now_loc);
-                else if(!dontmove && round <= 150 && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc);
+                else if(!dontmove && (my_Planet == Mars || round <= 150) && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc);
                 if(!done && should_replicate(id, now_loc, karb, round) && (my_Planet == Mars || typecount[0] <= passable_count[my_Planet]/20))
                 {
                     auto tmprep = replicate_to_harvest(id, now_loc);
