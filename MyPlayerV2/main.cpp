@@ -2110,7 +2110,7 @@ int main() {
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
                 if(try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
-                if(round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10)
+                if(bc_GameController_is_begin_snipe_ready(gc, id) && round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10)
                     should_overcharge = 1;
                 if(round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10 && try_snipe(id))
                     last_snipe_round[id] = round, should_overcharge = 0;
