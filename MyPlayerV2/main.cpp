@@ -136,6 +136,7 @@ int target_rocket[65536];
 map<int, int> need_bot_rocket;
 int poked_direction[65536];
 int last_attack_round[65536];
+int last_snipe_round[65536];
 int idle_round[65536];
 int enemy_direction[65536];
 bool visible[2500];
@@ -162,6 +163,7 @@ int waiting_for_rocket;
 int have_enemy_round;
 vector<int> left_worker_num;
 set<int> on_rocket;
+set<int> overcharge_healer;
 
 
 vit find_by_x(vit first, vit last, int x)
@@ -473,7 +475,6 @@ void organize_map_info() //Organize all the map information
         }
     }
     check_errors("Organizing");
-    cout<<"HEY"<<endl;
     return;
 }
 
@@ -1494,7 +1495,6 @@ bool try_snipe(int id)
         if(bc_GameController_can_begin_snipe(gc, id, maploc))
         {
             bc_GameController_begin_snipe(gc, id, maploc);
-            cout<<"SNIPE!"<<endl;
             return 1;
         }
     }
@@ -1554,11 +1554,22 @@ bool should_knight_rush(int now_loc)
     return 0;
 }
 
+bool try_overcharge(int id)
+{
+    for(auto healer_id:overcharge_healer) if(bc_GameController_can_overcharge(gc, healer_id, id))
+    {
+        bc_GameController_overcharge(gc, healer_id, id);
+        overcharge_healer.erase(healer_id);
+        return 1;
+    }
+    return 0;
+}
+
 int main() {
     printf("Meow Starting\n");
 
-    srand(7122);
-    gen.seed(7122);
+    srand(time(NULL));
+    gen.seed(time(NULL));
     printf("Connecting to manager...\n");
 
     gc = new_bc_GameController();
@@ -1586,12 +1597,12 @@ int main() {
     bc_GameController_queue_research(gc, Healer);
     bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Rocket);
-    bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Ranger);
     bc_GameController_queue_research(gc, Healer);
+    bc_GameController_queue_research(gc, Ranger);
+    bc_GameController_queue_research(gc, Ranger);
     for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
     for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
+    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
 
     while (true)
     {
@@ -1630,7 +1641,7 @@ int main() {
                 karbonite[loc] += karbo;
             }
         }
-
+        overcharge_healer.clear();
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
         {
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, i, j));
@@ -1661,7 +1672,12 @@ int main() {
                         typecount[bc_Unit_unit_type(units[loc])]++;
                         if(is_robot(type))
                         {
-                            if(type == Healer) chunk_enemy_fire[chunk_label[loc]] -= 10;
+                            if(type == Healer)
+                            {
+                                chunk_enemy_fire[chunk_label[loc]] -= 10;
+                                if(bc_GameController_is_overcharge_ready(gc, bc_Unit_id(units[loc])))
+                                    overcharge_healer.insert(bc_Unit_id(units[loc]));
+                            }
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
                         else if(type == Rocket) alive_rockets.insert(bc_Unit_id(units[loc]));
@@ -1747,7 +1763,6 @@ int main() {
                 }
                 else left_worker_num[connected_comp_label[loc[i]]]--;
             }
-            for(auto i:left_worker_num) cout<<i<<endl;
             for(int i = 0; i < teammates.size(); i++)
             {
                 for(int j = 0; j < teammates.size(); j++)
@@ -1930,6 +1945,7 @@ int main() {
             if(round >= print_round) cout<<"END POKED"<<endl;
             if(type != Worker && (round >= 425 || round-last_attack_round[id] >= 50))
                 if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
+            bool should_overcharge = 0;
 //            Here is what a worker will do
             if(type == Worker)
             {
@@ -1997,7 +2013,8 @@ int main() {
                 if(!bc_GameController_can_produce_robot(gc, id, Knight)) continue;
                 if(should_build_rocket && !need_worker && karb-40 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size())*200 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,min(3, (int)round/20)});
-                if(should_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3, weight[4] = 10;
+                if(should_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3;
+                if(round >= 500) for(int i = 0; i < 5; i++) weight[i] = ((i%2)?1:0);
                 if(should_build_rocket && (typecount[0] <= building_rocket.size() || need_worker)) for(int i = 0; i < 5; i++) weight[i] = (i?0:1);
                 if(should_knight_rush(now_loc)) for(int i = 0; i < 5; i++) weight[i] = (i==1?1:0);
                 try_produce(id, weight);
@@ -2007,15 +2024,15 @@ int main() {
             {
                 if(round >= print_round) cout<<"Knight"<<endl;
                 bool done = 0;
-                if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round;
-                if(try_attack(id, now_loc, 2)) last_attack_round[id] = round;
+                if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round, should_overcharge = 1;
+                if(try_attack(id, now_loc, 2)) last_attack_round[id] = round, should_overcharge = 1;
                 else
                 {
                     if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                     else walk_to_enemy(id, now_loc, type);
                     update_unit_location(id, unit, now_loc);
-                    if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round;
-                    if(try_attack(id, now_loc, 2)) last_attack_round[id] = round;
+                    if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round, should_overcharge = 1;
+                    if(try_attack(id, now_loc, 2)) last_attack_round[id] = round, should_overcharge = 1;
                 }
                 check_errors("Knight's turn");
             }
@@ -2076,14 +2093,14 @@ int main() {
             else if(type == Mage)
             {
                 if(round >= print_round) cout<<"Mage"<<endl;
-                if(try_attack(id, now_loc, 30)) last_attack_round[id] = round;
+                if(try_attack(id, now_loc, 30)) last_attack_round[id] = round, should_overcharge = 1;
                 if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
                     if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
-                        if(try_attack(id, now_loc, 30)) last_attack_round[id] = round;
+                        if(try_attack(id, now_loc, 30)) last_attack_round[id] = round, should_overcharge = 1;
                     }
                 }
                 else if(invisible_loc != -1 && (!(id%10) || my_Planet == Mars)) explore_unknown(id, now_loc);
@@ -2092,20 +2109,24 @@ int main() {
             else if(type == Ranger)
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
-                if(try_attack(id, now_loc, 50)) last_attack_round[id] = round;
-                if(round - last_attack_round[id] >= 10 && have_enemy_round >= 10 && try_snipe(id)) last_attack_round[id] = round;
+                if(try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
+                if(round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10)
+                    should_overcharge = 1;
+                if(round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10 && try_snipe(id))
+                    last_snipe_round[id] = round, should_overcharge = 0;
                 else if(my_Planet == Earth && !first_enemy && typecount[2] >= 8) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
                     if(!get_total_damage(now_loc) && walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
-                        if(try_attack(id, now_loc, 50)) last_attack_round[id] = round;
+                        if(try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
                     }
                 }
                 else if(invisible_loc != -1 && !(id%10)) explore_unknown(id, now_loc);
                 check_errors("Ranger's turn");
             }
+            if(should_overcharge && try_overcharge(id)) ii--;
         }
         need_worker = try_blueprint_rocket && !success_bluesprint_rocket;
         on_rocket.clear();
