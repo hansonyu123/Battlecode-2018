@@ -1668,13 +1668,21 @@ int main() {
             }
         }
         overcharge_healer.clear();
+
+        // For each square...
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
         {
+            // Location at this square
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, i, j));
+
+            // If we can see this square
             if(bc_GameController_can_sense_location(gc, tmp))
             {
-                int loc = i+j*map_width[my_Planet];
+                int loc = i+j*map_width[my_Planet]; // Encode loc
                 visible[loc] = 1;
+
+
+                // SOMETHING WITH KARBONITE LEVELS
                 if(!being_harvested[loc])
                 {
                     if(passable[my_Planet][loc])
@@ -1687,39 +1695,58 @@ int main() {
                         chunk_karbonite[chunk_label[loc]] -= karbonite[loc];
                     karbonite[loc] = 0;
                 }
+                ///////////////////////////////////
+
+
                 being_harvested[loc] = 0;
+
+                // If there is a unit on this square
                 if(bc_GameController_has_unit_at_location(gc, tmp))
                 {
                     units[loc] = bc_GameController_sense_unit_at_location(gc, tmp);
                     bc_UnitType type = bc_Unit_unit_type(units[loc]);
+
+                    // If the unit is on my team
                     if(bc_Unit_team(units[loc]) == my_Team)
                     {
+                        // We have a list of team units
                         teammates.push_back(make_pair(make_pair(i,j),units[loc]));
+                        // and a counter for each type
                         typecount[bc_Unit_unit_type(units[loc])]++;
                         if(is_robot(type))
                         {
                             if(type == Healer)
                             {
+                                // Chunk_enemy_fire is used in some "willingness" decisions later
                                 chunk_enemy_fire[chunk_label[loc]] -= 10;
+                                // We have a list of healers ready to use overcharge
                                 if(bc_GameController_is_overcharge_ready(gc, bc_Unit_id(units[loc])))
                                     overcharge_healer.insert(bc_Unit_id(units[loc]));
                             }
+                            // Chunk_friend_fire is also used in these "willingness" decisions
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
+                        // We also have lists of live rockets and factories
                         else if(type == Rocket) alive_rockets.insert(bc_Unit_id(units[loc]));
                         else alive_factories.insert(bc_Unit_id(units[loc]));
                     }
+
+                    // If the unit is an enemy
                     else
                     {
+                        // We have a list of enemies
                         enemies.push_back(make_pair(make_pair(i,j),units[loc]));
                         if(is_robot(type))
                         {
-                            if(type == Healer) chunk_enemy_fire[chunk_label[loc]] -= 10;
+                            // Enemy healers reduce our effective firepower in the chunk
+                            if(type == Healer) chunk_friend_fire[chunk_label[loc]] -= 10;
+                            // Other enemy robots add to their effective firepower in the chunk
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
                     }
                 }
             }
+            // If the spot is not visible
             else if(passable[my_Planet][i+j*map_width[my_Planet]]) invisible_loc = i+j*map_width[my_Planet];
         }
 
