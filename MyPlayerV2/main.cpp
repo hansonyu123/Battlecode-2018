@@ -190,8 +190,13 @@ vit find_by_y(vit first, vit last, int y)
     return first+l;
 }
 
-int corresponding_point(int loc, int sym)
+int corresponding_point(int loc, int sym) // Returns the location of the given location projected according to the given symmetry
 {
+    /*
+        1 : Y-symmetry
+        2 : X-symmetry
+        3 : 180deg
+    */
     int x = loc%map_width[my_Planet], y = loc/map_width[my_Planet];
     if(sym&1) x = map_width[my_Planet]-1-x;
     if(sym&2) y = map_height[my_Planet]-1-y;
@@ -217,37 +222,53 @@ bool out_of_bound(int loc, int dir)
     return out_of_bound(loc, dir, my_Planet);
 }
 
-int go(int dir, bc_Planet planet) //The number added to go in the direction dir
+int go(int dir, bc_Planet planet) // Add what this function returns to a location variable to move in the given direction
 {
     int w = map_width[planet];
     int a[9] = {w, w+1, 1, -w+1, -w, -w-1, -1, w-1, 0};
     return a[dir];
 }
 
-int go(int dir)
+int go(int dir) // In case you don't specify the planet
 {
     return go(dir, my_Planet);
 }
 
-int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
+int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa) // Depth-first search (recursive) for Mars
 {
+	/*
+		Performs a depth-first search, returning the total area of pockets on Mars
+
+		s	    current node (position value)
+		visited	array of positions recording whether or not dfs function has logged their areas
+		fa	    father
+		f       also father? Honestly I don't know what the two do
+		p	    parent
+	*/
     visited[s] = 1;
     fa[s] = f;
     int ans = 1;
     for(int i = 0; i < 8; i++)
     {
-        if(out_of_bound(s, i, Mars)) continue;
-        if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) continue;
-        ans += dfs(f, s+go(i, Mars), p, visited, fa);
+        // Conditions to end recursion
+        if(out_of_bound(s, i, Mars)) // Out of bounds
+			continue;
+        if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) // Impassable or visited
+			continue;
+        ans += dfs(f, s+go(i, Mars), p, visited, fa); // Else, recur
     }
-    return ans;
+    return ans; // Area
 }
 
 //Disjoint set
 int _ds__p[2500];
 int _ds__sz[2500];
 
-inline void _ds__init(int n){for(int i = 0; i < n; i++) _ds__p[i] = i, _ds__sz[i] = 1;}
+inline void _ds__init(int n)
+{
+    for(int i = 0; i < n; i++)
+        _ds__p[i] = i, _ds__sz[i] = 1;
+}
 
 int _ds__find(int s){return (_ds__p[s] == s)?s:_ds__p[s]=_ds__find(_ds__p[s]);}
 
@@ -469,8 +490,10 @@ void organize_map_info() //Organize all the map information
         connected_square_num.resize(h*w);
         for(int i = 0; i < h*w; i++) if(q[i])
         {
-            if(!visited[i]) connected_square_num[i] = dfs(i, i, q, visited, fa);
-            else connected_square_num[i] = connected_square_num[fa[i]];
+            if(!visited[i])
+                connected_square_num[i] = dfs(i, i, q, visited, fa);
+            else
+                connected_square_num[i] = connected_square_num[fa[i]];
             max_connected_num = max(max_connected_num, connected_square_num[i]);
         }
     }
