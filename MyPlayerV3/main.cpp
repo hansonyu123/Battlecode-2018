@@ -190,8 +190,13 @@ vit find_by_y(vit first, vit last, int y)
     return first+l;
 }
 
-int corresponding_point(int loc, int sym)
+int corresponding_point(int loc, int sym) // Returns the location of the given location projected according to the given symmetry
 {
+    /*
+    1 : Y-symmetry
+    2 : X-symmetry
+    3 : 180deg
+    */
     int x = loc%map_width[my_Planet], y = loc/map_width[my_Planet];
     if(sym&1) x = map_width[my_Planet]-1-x;
     if(sym&2) y = map_height[my_Planet]-1-y;
@@ -217,28 +222,38 @@ bool out_of_bound(int loc, int dir)
     return out_of_bound(loc, dir, my_Planet);
 }
 
-int go(int dir, bc_Planet planet) //The number added to go in the direction dir
+int go(int dir, bc_Planet planet) // Add what this function returns to a location variable to move in the given direction
 {
     int w = map_width[planet];
     int a[9] = {w, w+1, 1, -w+1, -w, -w-1, -1, w-1, 0};
     return a[dir];
 }
 
-int go(int dir)
+int go(int dir) // In case you don't specify the planet
 {
     return go(dir, my_Planet);
 }
 
-int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa)
+int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa) // Depth-first search (recursive) for Mars
 {
+    /*
+    Performs a depth-first search, returning the total area of pockets on Mars
+
+    s	    current node (position value)
+    visited	array of positions recording whether or not dfs function has logged their areas
+    fa	    father
+    f       also father? Honestly I don't know what the two do
+    p	    parent
+    */
     visited[s] = 1;
     fa[s] = f;
     int ans = 1;
     for(int i = 0; i < 8; i++)
     {
-        if(out_of_bound(s, i, Mars)) continue;
-        if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) continue;
-        ans += dfs(f, s+go(i, Mars), p, visited, fa);
+        // Conditions to end recursion
+        if(out_of_bound(s, i, Mars)) continue; // Out of bounds
+        if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) continue; // Impassable or visited
+        ans += dfs(f, s+go(i, Mars), p, visited, fa); // Else, recur
     }
     return ans;
 }
@@ -1557,18 +1572,21 @@ int main() {
     fill(worker_build_target, worker_build_target+65536, -1);
     fill(target_rocket, target_rocket+65536, -1);
 
-    bc_GameController_queue_research(gc, Worker);
-    bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Rocket);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Ranger);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+    if(my_Planet == Earth)
+    {
+        bc_GameController_queue_research(gc, Worker);
+        bc_GameController_queue_research(gc, Knight);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Ranger);
+        bc_GameController_queue_research(gc, Rocket);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Ranger);
+        bc_GameController_queue_research(gc, Ranger);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+    }
 
     while (true)
     {
@@ -1594,7 +1612,7 @@ int main() {
         invisible_loc = -1;
         int idle_num = 0;
 
-        if(my_Planet == Mars)
+        if(my_Planet == Mars) // Update karbonite levels from asteroid strikes
         {
             if(bc_AsteroidPattern_has_asteroid(asteroid_pattern, round))
             {
@@ -1608,13 +1626,19 @@ int main() {
             }
         }
         overcharge_healer.clear();
+
+         // For each square...
         for(int i = 0; i < map_width[my_Planet]; i++) for(int j = 0; j < map_height[my_Planet]; j++)
         {
+            // Location at this square
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, i, j));
+
+             // If we can see this square
             if(bc_GameController_can_sense_location(gc, tmp))
             {
-                int loc = i+j*map_width[my_Planet];
+                int loc = i+j*map_width[my_Planet]; // Encode loc
                 visible[loc] = 1;
+                 // SOMETHING WITH KARBONITE LEVELS
                 if(!being_harvested[loc])
                 {
                     if(passable[my_Planet][loc])
@@ -1628,38 +1652,51 @@ int main() {
                     karbonite[loc] = 0;
                 }
                 being_harvested[loc] = 0;
+                // If there is a unit on this square
                 if(bc_GameController_has_unit_at_location(gc, tmp))
                 {
                     units[loc] = bc_GameController_sense_unit_at_location(gc, tmp);
                     bc_UnitType type = bc_Unit_unit_type(units[loc]);
+                    // If the unit is on my team
                     if(bc_Unit_team(units[loc]) == my_Team)
                     {
+                        // We have a list of team units
                         teammates.push_back(make_pair(make_pair(i,j),units[loc]));
+                        // and a counter for each type
                         typecount[bc_Unit_unit_type(units[loc])]++;
                         if(is_robot(type))
                         {
                             if(type == Healer)
                             {
+                                 // Chunk_enemy_fire is used in some "willingness" decisions later
                                 chunk_enemy_fire[chunk_label[loc]] -= 10;
+                                // We have a list of healers ready to use overcharge
                                 if(bc_GameController_is_overcharge_ready(gc, bc_Unit_id(units[loc])))
                                     overcharge_healer.insert(bc_Unit_id(units[loc]));
                             }
+                            // Chunk_friend_fire is also used in these "willingness" decisions
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
+                        // We also have lists of live rockets and factories
                         else if(type == Rocket) alive_rockets.insert(bc_Unit_id(units[loc]));
                         else alive_factories.insert(bc_Unit_id(units[loc]));
                     }
+                    // If the unit is an enemy
                     else
                     {
+                        // We have a list of enemies
                         enemies.push_back(make_pair(make_pair(i,j),units[loc]));
                         if(is_robot(type))
                         {
-                            if(type == Healer) chunk_enemy_fire[chunk_label[loc]] -= 10;
+                            // Enemy healers reduce our effective firepower in the chunk
+                            if(type == Healer) chunk_friend_fire[chunk_label[loc]] -= 10;
+                            // Other enemy robots add to their effective firepower in the chunk
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
                     }
                 }
             }
+            // If the spot is not visible
             else if(passable[my_Planet][i+j*map_width[my_Planet]]) invisible_loc = i+j*map_width[my_Planet];
         }
 
