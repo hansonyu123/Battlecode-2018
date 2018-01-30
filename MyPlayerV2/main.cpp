@@ -1563,7 +1563,7 @@ bool should_knight_rush(int now_loc)
             if(bc_Unit_unit_type(enemies[i].second) != Factory && bc_Unit_unit_type(enemies[i].second) != Knight) continue;
             if(shortest_distance[y*w+x][now_loc+go(j)] < nearest_dist)
             {
-                nearest_dist = shortest_distance[y*w+x][now_loc+go(j)];
+                nearest_dist = shortest_distance[y*w+x][now_loc+go(j)];\
                 nearest_loc = y*w+x;
             }
             if(bc_Unit_unit_type(enemies[i].second) == Factory && shortest_distance[y*w+x][now_loc+go(j)] < nearest_factory_dist)
@@ -1614,18 +1614,21 @@ int main() {
     fill(worker_build_target, worker_build_target+65536, -1);
     fill(target_rocket, target_rocket+65536, -1);
 
-    bc_GameController_queue_research(gc, Worker);
-    bc_GameController_queue_research(gc, Knight);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Rocket);
-    bc_GameController_queue_research(gc, Healer);
-    bc_GameController_queue_research(gc, Ranger);
-    bc_GameController_queue_research(gc, Ranger);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
-    for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+    if(my_Planet == Earth) // The queue is global, so we can just designate this to Earth
+    {
+        bc_GameController_queue_research(gc, Worker);
+        bc_GameController_queue_research(gc, Knight);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Ranger);
+        bc_GameController_queue_research(gc, Rocket);
+        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Ranger);
+        bc_GameController_queue_research(gc, Ranger);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
+        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
+    }
 
     while (true)
     {
@@ -1651,7 +1654,7 @@ int main() {
         invisible_loc = -1;
         int idle_num = 0;
 
-        if(my_Planet == Mars)
+        if(my_Planet == Mars) // Update karbonite levels from asteroid strikes
         {
             if(bc_AsteroidPattern_has_asteroid(asteroid_pattern, round))
             {
