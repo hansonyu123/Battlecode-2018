@@ -973,52 +973,6 @@ int get_walk_to_direction(int id, int now_loc, int dest_loc)
 
 bool walk_to(int id, int now_loc, int dest_loc)
 {
-//    if(not_free.count(id))
-//    {
-//        int clockwise = 2*((id+1)%2)-1; //counter-clockwise or clockwise, depends on id
-//        int last_dir = not_free[id];
-//        int j = (last_dir-2*clockwise+8)%8;
-//        while(1)
-//        {
-//            if(bc_GameController_can_move(gc, id, bc_Direction(j)))
-//            {
-//                if(shortest_distance[now_loc][dest_loc] > shortest_distance[now_loc+go(j)][dest_loc])
-//                    not_free.erase(id);
-//                else not_free[id] = j;
-//                bc_GameController_move_robot(gc, id, bc_Direction(j));
-//                units[now_loc] = Ptr<bc_Unit>();
-//                units[now_loc+go(j)] = bc_GameController_unit(gc, id);
-//                return 1;
-//            }
-//            j = (j+8+clockwise)%8;
-//            if(j == (last_dir-2*clockwise+8)%8) return 0;
-//        }
-//    }
-//    for(int i = 0; i < 8; i++)
-//    {
-//        if(out_of_bound(now_loc, i)) continue;
-//        if(shortest_distance[now_loc+go(i)][dest_loc] == shortest_distance[now_loc][dest_loc]-1)//So this direction is the preferred one
-//        {
-////            Bug Pathing
-//            int clockwise = 2*(id%2)-1; //clockwise or counter-clockwise, depends on id
-//            int j = i;
-//            while(1)
-//            {
-//                if(bc_GameController_can_move(gc, id, bc_Direction(j)))
-//                {
-//                    if(shortest_distance[now_loc][dest_loc] <= shortest_distance[now_loc+go(j)][dest_loc])
-//                        not_free[id] = j;
-//                    bc_GameController_move_robot(gc, id, bc_Direction(j));
-//                    units[now_loc] = Ptr<bc_Unit>();
-//                    units[now_loc+go(j)] = bc_GameController_unit(gc, id);
-//                    return 1;
-//                }
-//                j = (j+8+clockwise)%8;
-//                if(j == i) return 0;
-//            }
-//        }
-//    }
-//    return 0; //Although it should never reach here
     if(shortest_distance[now_loc][dest_loc] == -1) return 0;
     if(now_loc == dest_loc) return 0;
     unsigned int shortest_dist = -1, nearest_dir;
@@ -1103,6 +1057,7 @@ bool poked(int id, int now_loc)
     return poked(id, now_loc);
 }
 
+
 bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
@@ -1143,14 +1098,22 @@ bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
 bool walk_to_heal(int id, int now_loc, int round)
 {
     if(!bc_GameController_is_move_ready(gc, id)) return 0;
-    vector<Ptr<bc_Unit>> nearby_teammates;
-    get_nearby_teammates(now_loc, 30, nearby_teammates);
-    for(auto teammate:nearby_teammates) if(bc_Unit_health(teammate) != bc_Unit_max_health(teammate)) return 0;
+    int h = map_height[my_Planet], w = map_width[my_Planet];
+    if(get_total_damage(now_loc))
+    {
+        int lowest_damage = 2147483647, best_dir;
+        for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
+        {
+            int new_loc = now_loc+go(i);
+            int new_x = new_loc%w, new_y = new_loc/w;
+            if(get_total_damage(new_loc) < lowest_damage) lowest_damage = get_total_damage(new_loc), best_dir = i;
+        }
+        return walk_to(id, now_loc, now_loc+go(best_dir));
+    }
     int max_willingness = 0;
     int dest_loc;
     vector<int> tmp(teammates.size()); for(int i = 0; i < tmp.size(); i++) tmp[i] = i;
     random_shuffle(tmp.begin(), tmp.end());
-    int h = map_height[my_Planet], w = map_width[my_Planet];
     int nowx = now_loc%w, nowy = now_loc/w;
     for(int i = 0; i < teammates.size(); i++)
     {
@@ -1159,15 +1122,18 @@ bool walk_to_heal(int id, int now_loc, int round)
         int lost_health = bc_Unit_max_health(teammates[i].second)-bc_Unit_health(teammates[i].second);
         int id = bc_Unit_id(teammates[i].second);
         if(shortest_distance[y*w+x][nowy*w+nowx] == -1) continue;
-        int willingness = (lost_health+1+min(0, 20+last_attack_round[id]-round))*shortest_distance[y*w+x][nowy*w+nowx];
+        int willingness = lost_health*1000/max(((int)shortest_distance[y*w+x][nowy*w+nowx])-4, 1);
         if(willingness > max_willingness)
         {
             max_willingness = willingness;
             dest_loc = y*w+x;
         }
     }
-    if(!max_willingness) return 0;
-    return walk_to(id, now_loc, dest_loc);
+    if(max_willingness <= 15000) return walk_to_enemy(id, now_loc, Healer);
+    int dest_x = dest_loc%w, dest_y = dest_loc/w;
+    if((dest_x-nowx)*(dest_x-nowx)+(dest_y-nowy)*(dest_y-nowy) > 20)
+        return walk_to(id, now_loc, dest_loc);
+    return 0;
 }
 
 bool walk_to_opposite(int id, int loc, int start_loc)
@@ -2046,23 +2012,23 @@ int main() {
                     update_unit_location(id, unit, now_loc);
                     if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
                 }
-                if(can_move(id))
-                {
-                    auto f = healer_gravity_force(now_loc);
-                    vector<int> walk_weight;
-                    for(int i = 0; i < 8; i++)
-                    {
-                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
-                        int dify = (go(i)+1)/map_width[my_Planet];
-                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
-                    }
-                    walk_weight.push_back(20);
-                    if(random_walk(id, now_loc, walk_weight))
-                    {
-                        update_unit_location(id, unit, now_loc);
-                        if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
-                    }
-                }
+//                if(can_move(id))
+//                {
+//                    auto f = healer_gravity_force(now_loc);
+//                    vector<int> walk_weight;
+//                    for(int i = 0; i < 8; i++)
+//                    {
+//                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
+//                        int dify = (go(i)+1)/map_width[my_Planet];
+//                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
+//                    }
+//                    walk_weight.push_back(20);
+//                    if(random_walk(id, now_loc, walk_weight))
+//                    {
+//                        update_unit_location(id, unit, now_loc);
+//                        if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
+//                    }
+//                }
                 check_errors("Healer's turn");
             }
             else if(type == Rocket)
