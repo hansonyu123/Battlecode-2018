@@ -1009,6 +1009,7 @@ void try_load(int id, int loc)
         int id2 = bc_Unit_id(units[loc+go(i)]);
         bc_UnitType type = bc_Unit_unit_type(units[loc+go(i)]);
         if(!is_robot(type)) continue;
+        if(type == Worker && built_rocket[id].first) continue;
         if(bc_GameController_can_load(gc, id, id2))
         {
             bc_GameController_load(gc, id, id2);
