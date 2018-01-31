@@ -14,6 +14,7 @@
 #include <set>
 #include <bitset>
 #include <iomanip>
+#include <stack>
 using namespace std;
 
 
@@ -749,55 +750,30 @@ bool try_repair(int id, int loc)
     return 0;
 }
 
-pair<bool, int> try_unload(int id, int loc)
+void get_nearby_enemies(int loc, int dist, vector<pair<Ptr<bc_Unit>,int>>& nearby_enemies)
 {
-    int tmp[8]; for(int i = 0; i < 8; i++) tmp[i] = i;
-    random_shuffle(tmp, tmp+8);
-    vector<int> high_priority;
-    if(enemy_direction[id] != 8)
+    nearby_enemies.clear();
+    int sq = 0; while((sq+1)*(sq+1) <= dist) sq++;
+    int now_x = loc%map_width[my_Planet], now_y = loc/map_width[my_Planet];
+    auto first = find_by_x(enemies.begin(), enemies.end(), now_x-sq);
+    auto last = find_by_x(enemies.begin(), enemies.end(), now_x+sq+1);
+    if(last-first < 22*dist/7) for(auto it = first; it != last; it++)
     {
-        high_priority.push_back(enemy_direction[id]);
-        int clockwise = 2*(rand()%2)-1;
-        high_priority.push_back((enemy_direction[id]+clockwise+8)%8);
-        high_priority.push_back((enemy_direction[id]-clockwise+8)%8);
+        int x = it->first.first, y = it->first.second;
+        if((x-now_x)*(x-now_x)+(y-now_y)*(y-now_y) <= dist)
+            nearby_enemies.push_back(make_pair(it->second,x+y*map_width[my_Planet]));
     }
-    for(int i = 0; i < high_priority.size(); i++) for(int j = 0; j < 8; j++) if(tmp[j] == high_priority[i]) swap(tmp[j], tmp[i]);
-    for(int i = 0; i < 8; i++) if(bc_GameController_can_unload(gc, id, bc_Direction(tmp[i])))
-    {
-        bc_GameController_unload(gc, id, bc_Direction(tmp[i]));
-        int new_loc = loc+go(tmp[i]);
-        Ptr<bc_MapLocation> tmpmloc(new_bc_MapLocation(my_Planet, new_loc%map_width[my_Planet], new_loc/map_width[my_Planet]));
-        Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, tmpmloc));
-        units[new_loc] = tmp;
-        return make_pair(1, new_loc);
-    }
-    for(int i = 0; i < 8; i++) if(!out_of_bound(loc, i) && passable[my_Planet][loc+go(i)])
-    {
-        Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (loc+go(i))%map_width[my_Planet], (loc+go(i))/map_width[my_Planet]));
-        if(bc_GameController_has_unit_at_location(gc, tmp))
+    else for(int i = 0; i <= sq; i++) for(int neg_x = -1; neg_x < (i?3:1); neg_x+=2)
         {
-            Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
-            if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit))
-                && bc_Unit_unit_type(blocking_unit) != Worker)
-                poked_direction[bc_Unit_id(blocking_unit)] = i;
+            if(now_x+neg_x*i < 0 || now_x+neg_x*i >= map_width[my_Planet]) continue;
+            for(int j = 0; j*j+i*i <= dist; j++) for(int neg_y = -1; neg_y < (j?3:1); neg_y += 2)
+            {
+                if(now_y+neg_y*j < 0 || now_y+neg_y*j >= map_height[my_Planet]) continue;
+                int new_loc = now_x+neg_x*i + (now_y+neg_y*j)*map_width[my_Planet];
+                if(units[new_loc] && bc_Unit_team(units[new_loc]) != my_Team)
+                    nearby_enemies.push_back(make_pair(units[new_loc], new_loc));
+            }
         }
-    }
-    return make_pair(0, -1);
-}
-
-bool try_produce(int id, vector<int>& weight) //weight: in proportion to the probability of producing a certain type
-{
-    vector<int> tmp(get_random_indices(weight));
-    for(auto i:tmp)
-    {
-        if(bc_GameController_can_produce_robot(gc, id, bc_UnitType(i)))
-        {
-            bc_GameController_produce_robot(gc, id, bc_UnitType(i));
-            return 1;
-        }
-    }
-    //    Impossible to produce any unit. :(
-    return 0;
 }
 
 void get_nearby_enemies(int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
@@ -971,6 +947,59 @@ bool try_heal(int id, int loc, int dist)
             return 1;
         }
     }
+    return 0;
+}
+
+pair<bool, int> try_unload(int id, int loc)
+{
+    int tmp[8]; for(int i = 0; i < 8; i++) tmp[i] = i;
+    random_shuffle(tmp, tmp+8);
+    vector<int> high_priority;
+    if(enemy_direction[id] != 8)
+    {
+        high_priority.push_back(enemy_direction[id]);
+        int clockwise = 2*(rand()%2)-1;
+        high_priority.push_back((enemy_direction[id]+clockwise+8)%8);
+        high_priority.push_back((enemy_direction[id]-clockwise+8)%8);
+    }
+    for(int i = 0; i < high_priority.size(); i++) for(int j = 0; j < 8; j++) if(tmp[j] == high_priority[i]) swap(tmp[j], tmp[i]);
+    for(int i = 0; i < 8; i++) if(bc_GameController_can_unload(gc, id, bc_Direction(tmp[i])))
+    {
+        bc_GameController_unload(gc, id, bc_Direction(tmp[i]));
+        int new_loc = loc+go(tmp[i]);
+        Ptr<bc_MapLocation> tmpmloc(new_bc_MapLocation(my_Planet, new_loc%map_width[my_Planet], new_loc/map_width[my_Planet]));
+        Ptr<bc_Unit> tmp(bc_GameController_sense_unit_at_location(gc, tmpmloc));
+        units[new_loc] = tmp;
+        if(bc_Unit_unit_type(tmp) == Healer) try_heal(bc_Unit_id(tmp), new_loc, 30);
+        else if(bc_Unit_unit_type(tmp) != Worker) try_attack(bc_Unit_id(tmp), new_loc, bc_Unit_attack_range(tmp));
+        return make_pair(1, new_loc);
+    }
+    for(int i = 0; i < 8; i++) if(!out_of_bound(loc, i) && passable[my_Planet][loc+go(i)])
+    {
+        Ptr<bc_MapLocation> tmp(new_bc_MapLocation(my_Planet, (loc+go(i))%map_width[my_Planet], (loc+go(i))/map_width[my_Planet]));
+        if(bc_GameController_has_unit_at_location(gc, tmp))
+        {
+            Ptr<bc_Unit> blocking_unit(bc_GameController_sense_unit_at_location(gc, tmp));
+            if(bc_Unit_team(blocking_unit) == my_Team && is_robot(bc_Unit_unit_type(blocking_unit))
+                && bc_Unit_unit_type(blocking_unit) != Worker)
+                poked_direction[bc_Unit_id(blocking_unit)] = i;
+        }
+    }
+    return make_pair(0, -1);
+}
+
+bool try_produce(int id, vector<int>& weight) //weight: in proportion to the probability of producing a certain type
+{
+    vector<int> tmp(get_random_indices(weight));
+    for(auto i:tmp)
+    {
+        if(bc_GameController_can_produce_robot(gc, id, bc_UnitType(i)))
+        {
+            bc_GameController_produce_robot(gc, id, bc_UnitType(i));
+            return 1;
+        }
+    }
+    //    Impossible to produce any unit. :(
     return 0;
 }
 
@@ -1623,7 +1652,7 @@ bool try_overcharge(int id)
     return 0;
 }
 
-void get_nearby_workers(int now_loc, int num, priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>>& pq)
+void get_nearby_workers(int now_loc, int num, priority_queue<pair<int,int>>& pq)
 {
     vector<int> passable_neighbors;
     for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
@@ -1967,13 +1996,15 @@ int main() {
                 int id = factory.first, now_loc = factory.second;
                 for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
                     working_place++;
-                priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;
+                priority_queue<pair<int,int>> pq;
                 get_nearby_workers(factory.second, working_place, pq);
                 int need_health = 300 - bc_Unit_health(units[factory.second]);
                 int build_health_slope = 0, build_health_intercept = 0, build_round = 2000;
-                while(pq.size())
+                stack<pair<int,int>> st;
+                while(pq.size()) st.push(pq.top()), pq.pop();
+                while(st.size())
                 {
-                    pair<int,int> tmp = pq.top(); pq.pop();
+                    pair<int,int> tmp = st.top(); st.pop();
                     int round_to_reach = 2*tmp.first, worker_id = tmp.second;
                     if(round_to_reach >= build_round) break;
                     int built_health_at_reaching_round = build_health_slope*round_to_reach + build_health_intercept;
@@ -1981,21 +2012,27 @@ int main() {
                     build_health_intercept = built_health_at_reaching_round - build_health_slope*round_to_reach;
                     int new_build_round = (need_health-build_health_intercept-1)/build_health_slope+1;
                     if(build_round - new_build_round < 5) break;
+                    build_round = new_build_round;
                     worker_build_target[worker_id] = factory.second;
                 }
             }
             else
             {
-                vector<Ptr<bc_Unit>> nearby_enemies;
+                vector<pair<Ptr<bc_Unit>,int>> nearby_enemies;
                 get_nearby_enemies(factory.second, 50, nearby_enemies);
                 int id = factory.first, now_loc = factory.second;
                 int x = now_loc%map_width[my_Planet], y = now_loc/map_width[my_Planet];
                 if(nearby_enemies.size())
                 {
                     high_priority.push_back(factory.first);
-                    int ene_id = bc_Unit_id(nearby_enemies[0]);
-                    int ene_loc;
-                    update_unit_location(ene_id, nearby_enemies[0], ene_loc);
+                    int ene_loc = nearby_enemies[0].second;
+                    unsigned int nearest_enemy_dist = -1;
+                    for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
+                        for(auto enemy:nearby_enemies) if(shortest_distance[now_loc+go(i)][enemy.second] < nearest_enemy_dist)
+                        {
+                            nearest_enemy_dist = shortest_distance[now_loc+go(i)][enemy.second];
+                            ene_loc = enemy.second;
+                        }
                     int ene_x = ene_loc%map_width[my_Planet], ene_y = ene_loc/map_width[my_Planet];
                     int index = 0;
                     if(ene_x > x) index += 6;
@@ -2042,11 +2079,10 @@ int main() {
 //            Here is what a worker will do
             if(type == Worker)
             {
-//                A worker tries stuff in this order:
-//                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
-//                TODO: Make every attempt into a function, and change the order based on some other numbers
                 if(round >= print_round) cout<<"Worker"<<endl;
                 bool done = 0, dontmove = 0;
+                //cout<<"LOC"<<now_loc%map_width[my_Planet]<<' '<<now_loc/map_width[my_Planet]<<endl;
+                //cout<<worker_build_target[id]<<' '<<should_stay[id]<<endl;
                 if(worker_build_target[id] != -1 && !should_stay[id])
                 {
                     dontmove = 1;
