@@ -1998,9 +1998,6 @@ int main() {
             if(on_rocket.count(id)) continue;
             int now_loc = teammates[tmprandom[ii]].first.first + teammates[tmprandom[ii]].first.second*map_width[my_Planet];
             bc_UnitType type = bc_Unit_unit_type(unit);
-            if(round >= print_round) cout<<"START POKED"<<endl;
-            if(poked(id, now_loc)) update_unit_location(id, unit, now_loc);
-            if(round >= print_round) cout<<"END POKED"<<endl;
             if(type != Worker && (round >= 425 || round-last_attack_round[id] >= 50))
                 if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
             bool should_overcharge = 0;
@@ -2011,6 +2008,7 @@ int main() {
                 bool done = 0, dontmove = 0;
                 //cout<<"LOC"<<now_loc%map_width[my_Planet]<<' '<<now_loc/map_width[my_Planet]<<endl;
                 //cout<<worker_build_target[id]<<' '<<should_stay[id]<<endl;
+                if(poked(id, now_loc)) update_unit_location(id, unit, now_loc), dontmove = 1;
                 if(worker_build_target[id] != -1 && !should_stay[id])
                 {
                     dontmove = 1;
@@ -2080,14 +2078,18 @@ int main() {
             else if(type == Knight)
             {
                 if(round >= print_round) cout<<"Knight"<<endl;
-                bool done = 0;
+                bool attack = 0, moved = 0;
                 if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round, should_overcharge = 1;
-                if(try_attack(id, now_loc, 2)) last_attack_round[id] = round, should_overcharge = 1;
-                else
+                if(try_attack(id, now_loc, 2)) last_attack_round[id] = round, should_overcharge = 1, attack = 1;
+                if(poked(id, now_loc)) update_unit_location(id, unit, now_loc), moved = 1;
+                else if(!attack)
                 {
                     if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                     else walk_to_enemy(id, now_loc, type);
-                    update_unit_location(id, unit, now_loc);
+                    update_unit_location(id, unit, now_loc), moved = 1;
+                }
+                if(moved)
+                {
                     if(try_javelin(id, now_loc, 10)) last_attack_round[id] = round, should_overcharge = 1;
                     if(try_attack(id, now_loc, 2)) last_attack_round[id] = round, should_overcharge = 1;
                 }
@@ -2097,29 +2099,16 @@ int main() {
             {
                 if(round >= print_round) cout<<"Healer"<<endl;
                 check_errors("INIT");
-                if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
-                else if(walk_to_heal(id, now_loc, round))
+                bool heal = 0, moved = 0;
+                if(try_heal(id, now_loc, 30)) last_attack_round[id] = round, heal = 1;
+                if(poked(id, now_loc)) update_unit_location(id, unit, now_loc), moved = 1;
+                else if(!heal && walk_to_heal(id, now_loc, round))
                 {
                     update_unit_location(id, unit, now_loc);
-                    if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
+                    moved = 1;
+
                 }
-//                if(can_move(id))
-//                {
-//                    auto f = healer_gravity_force(now_loc);
-//                    vector<int> walk_weight;
-//                    for(int i = 0; i < 8; i++)
-//                    {
-//                        int difx = (map_width[my_Planet]+go(i)+1)%map_width[my_Planet] - 1;
-//                        int dify = (go(i)+1)/map_width[my_Planet];
-//                        walk_weight.push_back(max((int)(difx*f.first + dify*f.second), 0));
-//                    }
-//                    walk_weight.push_back(20);
-//                    if(random_walk(id, now_loc, walk_weight))
-//                    {
-//                        update_unit_location(id, unit, now_loc);
-//                        if(try_heal(id, now_loc, 30)) last_attack_round[id] = round;
-//                    }
-//                }
+                if(moved && try_heal(id, now_loc, 30)) last_attack_round[id] = round;
                 check_errors("Healer's turn");
             }
             else if(type == Rocket)
@@ -2150,23 +2139,28 @@ int main() {
             else if(type == Mage)
             {
                 if(round >= print_round) cout<<"Mage"<<endl;
+                bool moved = 0;
                 if(try_attack(id, now_loc, 30)) last_attack_round[id] = round, should_overcharge = 1;
-                if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
+                if(poked(id, now_loc)) update_unit_location(id, unit, now_loc), moved = 1;
+                else if(my_Planet == Earth && !first_enemy) walk_to_opposite(id, now_loc, start_loc);
                 else if(enemies.size())
                 {
                     if(walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
-                        if(try_attack(id, now_loc, 30)) last_attack_round[id] = round, should_overcharge = 1;
+                        moved = 1;
                     }
                 }
-                else if(invisible_loc != -1 && (!(id%10) || my_Planet == Mars)) explore_unknown(id, now_loc);
+                else if(invisible_loc != -1 && (!(id%10) || my_Planet == Mars))explore_unknown(id, now_loc);
+                if(moved && try_attack(id, now_loc, 30)) last_attack_round[id] = round, should_overcharge = 1;
                 check_errors("Mage's turn");
             }
             else if(type == Ranger)
             {
                 if(round >= print_round) cout<<"Ranger"<<endl;
+                bool moved = 0;
                 if(try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
+                if(poked(id, now_loc)) update_unit_location(id, unit, now_loc), moved = 1;
                 if(bc_GameController_is_begin_snipe_ready(gc, id) && round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10)
                     should_overcharge = 1;
                 if(round - last_attack_round[id] >= 10 && round - last_snipe_round[id] > 5 && have_enemy_round >= 10 && try_snipe(id))
@@ -2177,10 +2171,11 @@ int main() {
                     if(walk_to_enemy(id, now_loc, type))
                     {
                         update_unit_location(id, unit, now_loc);
-                        if(try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
+                        moved = 1;
                     }
                 }
                 else if(invisible_loc != -1 && !(id%10)) explore_unknown(id, now_loc);
+                if(moved && try_attack(id, now_loc, 50)) last_attack_round[id] = round, should_overcharge = 1;
                 check_errors("Ranger's turn");
             }
             if(should_overcharge && try_overcharge(id)) ii--;
