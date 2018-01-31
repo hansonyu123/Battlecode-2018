@@ -107,7 +107,7 @@ int karbonite[2500];
 vector<int> connected_square_num; //The size of connected components on Mars.
 int max_connected_num;
 int passable_count[2];
-unsigned int shortest_distance[2500][2500]; //Shortest distance between squares. (x,y) corresponds to y*w+h.
+unsigned int shortest_distance[2500][2500]; //Shortest distance between square. (x,y) corresponds to y*w+h.
 unsigned int distance_to_wall[2500]; //Distance to impassable squares/the bound of the map.
 Ptr<bc_PlanetMap> planetmap[2]; //The maps.
 default_random_engine gen; //C++11 random engine
@@ -217,7 +217,7 @@ bool out_of_bound(int loc, int dir, bc_Planet planet) //Test if going in the dir
     if(dir == 8) return false;
 }
 
-bool out_of_bound(int loc, int dir)
+bool out_of_bound(int loc, int dir) // In case you didn't specify the planet
 {
     return out_of_bound(loc, dir, my_Planet);
 }
@@ -239,8 +239,8 @@ int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa) /
     /*
     Performs a depth-first search, returning the total area of pockets on Mars
 
-    s	    current node (position value)
-    visited	array of positions recording whether or not dfs function has logged their areas
+    s	    current node (square value)
+    visited	array of squares recording whether or not dfs function has logged their areas
     fa	    father
     f       also father? Honestly I don't know what the two do
     p	    parent
@@ -248,11 +248,14 @@ int dfs(int f, int s, vector<bool>& p, vector<bool>& visited, vector<int>& fa) /
     visited[s] = 1;
     fa[s] = f;
     int ans = 1;
+
+    // Branches to each adjacent square
     for(int i = 0; i < 8; i++)
     {
         // Conditions to end recursion
         if(out_of_bound(s, i, Mars)) continue; // Out of bounds
         if(!p[s+go(i, Mars)] || visited[s+go(i, Mars)]) continue; // Impassable or visited
+
         ans += dfs(f, s+go(i, Mars), p, visited, fa); // Else, recur
     }
     return ans;
@@ -279,70 +282,132 @@ inline int abs(int a){return (a>0)?a:-a;}
 
 void organize_map_info() //Organize all the map information
 {
-    for(int i = 0; i < 2; i++)
+    /*
+        Besides main, this is the largest function by far.
+
+        It gets called once, at the beginning of the game
+
+        The purpose is to convert available map data to convenient global variables,
+        as well as perform some calculations/analysis
+
+        Outputs/Effects of this function: (All global variables)
+        map_height[]        A number for each planet
+        map_width[]         A number for each planet
+        passable[]          A vector for each planet, storing whether each square is traversable
+        passable_count[]    A number for each planet, counting how many traversable squares there are in total
+        karbonite[]         An array of karbonite amounts for each square of this map
+        symmetry            A number representing in what way Earth is symmetric (1=flip over y-axis, 2=""x, 3=both or 180deg rotation)
+        asteroid_pattern    A pointer to the asteroid pattern on Mars
+        shortest_distance   A map of maps, telling the shortest distance from each square to each square
+        distance_to_wall    An array of the distances from each square to the nearest wall/boundary
+
+        ...To be continued. I'm shifting my focus to another part of the program
+    */
+    for(int i = 0; i < 2; i++) // Once for Earth, once for Mars
     {
+        // Set global variables for height and width of the map
         map_height[i] = bc_PlanetMap_height_get(planetmap[i]);
         map_width[i] = bc_PlanetMap_width_get(planetmap[i]);
+
+        // Resize global vector storing whether each square is passable (aka not a barrier)
         passable[i].resize(map_height[i]*map_width[i]);
-        for(int x = 0; x < map_width[i]; x++) for(int y = 0; y < map_height[i]; y++) //Read in the map
+
+        for(int x = 0; x < map_width[i]; x++) for(int y = 0; y < map_height[i]; y++)
         {
+            // Store passable value and increment passable_count by 1 if passable
             Ptr<bc_MapLocation> tmp(new_bc_MapLocation(bc_Planet(i), x, y));
             passable_count[i] += passable[i][map_width[i]*y+x] = bc_PlanetMap_is_passable_terrain_at(planetmap[i], tmp);
 
+            // Store initial values of karbonite in karbonite[]
             if(bc_Planet(i) == my_Planet) karbonite[map_width[i]*y+x] = bc_PlanetMap_initial_karbonite_at(planetmap[i], tmp);
         }
     }
+    // Place-names for convenience
     int h = map_height[my_Planet], w = map_width[my_Planet];
     vector<bool>& p = passable[my_Planet];
-//    Guess the symmetry
+
+    // Determine the symmetry of the map
     if(my_Planet == Earth)
     {
+        // Symmetry across y- and x-axes initially assumed possible
         bool possibly_1 = true, possibly_2 = true;
 
         // Check for symmetry = 2
-        for(int loc = 0; loc < h*w/2; loc++){
+        for(int loc = 0; loc < h*w/2; loc++)
+        {
+            // Test symmetry = 2 for this square
             if(p[loc] != p[corresponding_point(loc, 2)])
             {
                 possibly_2 = false;
                 break;
             }
         }
-
         // Check for symmetry = 1
-        for(int loc = 0; loc < h*w/2; loc++){ //Note this checks half the map, plus the other half through corresponding_point.
-            int temp_x = loc/h, temp_y = loc%h; // Convert from row-major to column-major
+        for(int loc = 0; loc < h*w/2; loc++) //Note this checks half the map, plus the other half through corresponding_point.
+        {
+            // Convert from row-major to column-major
+            int temp_x = loc/h, temp_y = loc%h;
             int inverted_loc = h*temp_y+temp_x;
+
+            // Test symmetry = 1 for this square
             if(p[inverted_loc] != p[corresponding_point(inverted_loc, 1)])
             {
                 possibly_1 = false;
                 break;
             }
         }
+        // If y- and x-axis symmetry both, then qualifies for 180. If neither, then must be 180 (symmetry = 3)
         if (possibly_1 == possibly_2) symmetry = 3;
+
+        // Otherwise, symmetry = the one that didn't fail the test
         else symmetry = possibly_1 ? 1 : 2;
     }
+    // On Mars, get the asteroid_pattern
     else asteroid_pattern = bc_GameController_asteroid_pattern(gc);
 
-//    BFS shortest path
+    // BFS Shortest path
+    // Considers EACH square for EACH square (It's a long for loop)
     for(int i = 0; i < h*w; i++) for(int j = 0; j < h*w; j++) shortest_distance[i][j] = (i==j)?0:-1;// -1 = Very large
+    /*
+        At this point, each square has a map filled with -1, except for the spot where it itself is, where the value is 0.
+
+        The end goal is to store how many steps it takes to get from each square to each other square.
+    */
+
+    // For each square
     for(int i = 0; i < h*w; i++) // BFS.
     {
-        distance_to_wall[i] = -1; //-1 = Very large
+        // Default value (-1 converts to maximum size of an unsigned int)
+        distance_to_wall[i] = -1;
+
+        // Skip impassable squares
         if(!p[i]) continue;
+
+        // Create a queue and add the current square position to it
         queue<int> q; q.push(i);
+
+        // While there is anything in the queue
         while(q.size())
         {
             int j = q.front(); q.pop();
+
+            // Branch out to adjacent squares
             for(int k = 0; k < 8; k++)
             {
+                // If the adjacent square is neither out of bounds nor impassable...
                 if(!out_of_bound(j, k) && p[j+go(k)])
                 {
+                    // And the adjacent square has not been assigned a shortest_distance already
                     if(shortest_distance[i][j+go(k)] == -1)
                     {
+                        // Set the shortest distance to be one greater than the current square
                         shortest_distance[i][j+go(k)] = shortest_distance[i][j]+1;
+
+                        // Add this square to the queue so it can continue to branch out
                         q.push(j+go(k));
                     }
                 }
+                // If this square is out of bounds or impassable, update distance_to_wall
                 else distance_to_wall[i] = min(distance_to_wall[i], shortest_distance[i][j]+1);
             }
         }
@@ -362,14 +427,20 @@ void organize_map_info() //Organize all the map information
 //        }
 //    }
 
+    // Again, for each square
     for(int i = 0; i < h*w; i++)
     {
+        // Skip if the square is impassable
         if(!p[i]) continue;
+
+        // Going in 4 directions. j will be multiplied by 2 when referenced. (There are 8 total directions available)
         for(int j = 0; j < 4; j++)
         {
+            // Starting with the current square, we have a stepping square, ii
             int ii = i;
             while(1)
             {
+                // Starting with the stepping square ii, we have a stepping stepping square, iii
                 int iii = ii;
                 while(1)
                 {
@@ -1462,12 +1533,12 @@ bool try_snipe(int id)
         if(!bc_GameController_can_sense_unit(gc, ene_id)) continue;
         bc_UnitType type = bc_Unit_unit_type(enemies[tmp[i]].second);
         if(type == Worker) priority = 0;
-        else if(type == Knight) priority = 2;
-        else if(type == Mage) priority = 3;
+        else if(type == Knight) priority = 1;
+        else if(type == Mage) priority = 6;
         else if(type == Ranger) priority = 4;
-        else if(type == Healer) priority = 5;
-        else if(type == Factory) priority = 6;
-        else if(type == Rocket) priority = 1;
+        else if(type == Healer) priority = 2;
+        else if(type == Factory) priority = 5;
+        else if(type == Rocket) priority = 3;
         if(priority > max_priority) max_priority = priority, att_index = tmp[i];
     }
     if(max_priority != -1)
@@ -1700,6 +1771,7 @@ int main() {
             else if(passable[my_Planet][i+j*map_width[my_Planet]]) invisible_loc = i+j*map_width[my_Planet];
         }
 
+        // Maintains a count of consecutive rounds with enemies in sight
         if(enemies.size()) have_enemy_round++;
         else have_enemy_round = 0;
 
