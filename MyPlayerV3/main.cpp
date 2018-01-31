@@ -14,6 +14,7 @@
 #include <set>
 #include <bitset>
 #include <iomanip>
+#include <stack>
 using namespace std;
 
 
@@ -1552,7 +1553,7 @@ bool try_overcharge(int id)
     return 0;
 }
 
-void get_nearby_workers(int now_loc, int num, priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>>& pq)
+void get_nearby_workers(int now_loc, int num, priority_queue<pair<int,int>>& pq)
 {
     vector<int> passable_neighbors;
     for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
@@ -1895,13 +1896,15 @@ int main() {
                 int id = factory.first, now_loc = factory.second;
                 for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
                     working_place++;
-                priority_queue<pair<int,int>, vector<pair<int,int>>, greater<pair<int,int>>> pq;
+                priority_queue<pair<int,int>> pq;
                 get_nearby_workers(factory.second, working_place, pq);
                 int need_health = 300 - bc_Unit_health(units[factory.second]);
                 int build_health_slope = 0, build_health_intercept = 0, build_round = 2000;
-                while(pq.size())
+                stack<pair<int,int>> st;
+                while(pq.size()) st.push(pq.top()), pq.pop();
+                while(st.size())
                 {
-                    pair<int,int> tmp = pq.top(); pq.pop();
+                    pair<int,int> tmp = st.top(); st.pop();
                     int round_to_reach = 2*tmp.first, worker_id = tmp.second;
                     if(round_to_reach >= build_round) break;
                     int built_health_at_reaching_round = build_health_slope*round_to_reach + build_health_intercept;
@@ -1971,11 +1974,10 @@ int main() {
 //            Here is what a worker will do
             if(type == Worker)
             {
-//                A worker tries stuff in this order:
-//                1. Harvest 2. Build 3. Replicate 4. Blueprint rockets 5. Blueprint factories 6. Repair
-//                TODO: Make every attempt into a function, and change the order based on some other numbers
                 if(round >= print_round) cout<<"Worker"<<endl;
                 bool done = 0, dontmove = 0;
+                //cout<<"LOC"<<now_loc%map_width[my_Planet]<<' '<<now_loc/map_width[my_Planet]<<endl;
+                //cout<<worker_build_target[id]<<' '<<should_stay[id]<<endl;
                 if(worker_build_target[id] != -1 && !should_stay[id])
                 {
                     dontmove = 1;
