@@ -766,10 +766,10 @@ bool try_attack(int id, int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
         if(type == Worker) priority = 0;
         else if(type == Knight) priority = 1;
         else if(type == Mage) priority = 6;
-        else if(type == Ranger) priority = 4;
-        else if(type == Healer) priority = 2;
+        else if(type == Ranger) priority = 3;
+        else if(type == Healer) priority = 4;
         else if(type == Factory) priority = 5;
-        else if(type == Rocket) priority = 3;
+        else if(type == Rocket) priority = 2;
         if(priority > max_priority) max_priority = priority, min_heallth = health, att_id = ene_id;
         else if(priority == max_priority && health < min_heallth) min_heallth = health, att_id = ene_id;
     }
