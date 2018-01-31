@@ -132,7 +132,6 @@ vector<int> chunk_enemy_fire;
 vector<int> chunk_next_chunk_to_karbonite;
 int structure_wait_for_work_round[65536];
 int worker_build_target[65536];
-bool worker_is_building[65536];
 int target_rocket[65536];
 map<int, int> need_bot_rocket;
 int poked_direction[65536];
@@ -667,7 +666,6 @@ bool try_build(int id, int loc)
         {
             bc_GameController_build(gc, id, bc_Unit_id(units[loc+go(i)]));
             worker_build_target[id] = loc+go(i);
-            worker_is_building[id] = 1;
             return 1;
         }
     return 0;
@@ -733,7 +731,7 @@ bool try_blueprint(int id, int loc, bc_UnitType structure)
             }
     }
     if(structure == Rocket) success_bluesprint_rocket = 1, rocket_just_blueprinted = 1;
-    worker_is_building[id] = 1, worker_build_target[id] = new_loc;
+    worker_build_target[id] = new_loc;
     return 1;
 }
 
@@ -837,10 +835,10 @@ bool try_attack(int id, int loc, int dist, vector<Ptr<bc_Unit>>& nearby_enemies)
         if(type == Worker) priority = 0;
         else if(type == Knight) priority = 1;
         else if(type == Mage) priority = 6;
-        else if(type == Ranger) priority = 3;
-        else if(type == Healer) priority = 4;
+        else if(type == Ranger) priority = 4;
+        else if(type == Healer) priority = 2;
         else if(type == Factory) priority = 5;
-        else if(type == Rocket) priority = 2;
+        else if(type == Rocket) priority = 3;
         if(priority > max_priority) max_priority = priority, min_heallth = health, att_id = ene_id;
         else if(priority == max_priority && health < min_heallth) min_heallth = health, att_id = ene_id;
     }
@@ -1734,6 +1732,9 @@ int main() {
         invisible_loc = -1;
         int idle_num = 0;
 
+        // Number of starting workers
+        int initial_workers = 0;
+
         if(my_Planet == Mars) // Update karbonite levels from asteroid strikes
         {
             if(bc_AsteroidPattern_has_asteroid(asteroid_pattern, round))
@@ -1796,6 +1797,10 @@ int main() {
                                 if(bc_GameController_is_overcharge_ready(gc, bc_Unit_id(units[loc])))
                                     overcharge_healer.insert(bc_Unit_id(units[loc]));
                             }
+                            // Count initial workers for first round
+                            else if(round == 1 && type == Worker){
+                                initial_workers++;
+                            }
                             // Chunk_friend_fire is also used in these "willingness" decisions
                             else chunk_friend_fire[chunk_label[loc]] += bc_Unit_damage(units[loc]);
                         }
@@ -1826,6 +1831,7 @@ int main() {
         if(enemies.size()) have_enemy_round++;
         else have_enemy_round = 0;
 
+        // We want to start building rockets around round 500
         should_build_rocket = round >= 500;
         if(!should_build_rocket && can_build_rocket)
         {
@@ -1901,8 +1907,19 @@ int main() {
                 if(max_willingess < willingness[i]) max_willingess = willingness[i], start_loc = loc[i], index = i;
 //            high_priority.push_back(index);
         }
+
+        // Consider placing a factory blueprint
         else if(karb >= 200 && !should_build_rocket && my_Planet == Earth)
         {
+            // If it is an early round
+                // Check each worker
+                    // Check how far each enemy is
+                        // If the enemy is the nearest, store worker id and distance
+
+                // Queue that worker to build a blueprint (optionally in the direction of the enemy)
+
+
+
             int max_willingness = -100000, index;
             for(int i = 0; i < teammates.size(); i++)
             {
@@ -1997,43 +2014,67 @@ int main() {
                 for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
                     working_place++;
                 priority_queue<pair<int,int>> pq;
+
+                // Get nearby workers, sorted from furthest to nearest
                 get_nearby_workers(factory.second, working_place, pq);
+
+                // Calculate how many rounds until built
                 int need_health = 300 - bc_Unit_health(units[factory.second]);
                 int build_health_slope = 0, build_health_intercept = 0, build_round = 2000;
                 stack<pair<int,int>> st;
                 while(pq.size()) st.push(pq.top()), pq.pop();
+                // Each loop get the next worker, starting with the closest
                 while(st.size())
                 {
-                    pair<int,int> tmp = st.top(); st.pop();
-                    int round_to_reach = 2*tmp.first, worker_id = tmp.second;
+                    pair<int,int> this_worker = st.top(); st.pop();
+                    int round_to_reach = 2*this_worker.first, worker_id = this_worker.second;
                     if(round_to_reach >= build_round) break;
                     int built_health_at_reaching_round = build_health_slope*round_to_reach + build_health_intercept;
                     build_health_slope += 5;
                     build_health_intercept = built_health_at_reaching_round - build_health_slope*round_to_reach;
                     int new_build_round = (need_health-build_health_intercept-1)/build_health_slope+1;
+
+                    // Optimization try changing 5 to 3 or something
                     if(build_round - new_build_round < 5) break;
                     build_round = new_build_round;
                     worker_build_target[worker_id] = factory.second;
                 }
             }
-            else
+            else // Is a built, fully-functioning factory
             {
+                // Consider whether there are nearby enemies
                 vector<pair<Ptr<bc_Unit>,int>> nearby_enemies;
                 get_nearby_enemies(factory.second, 50, nearby_enemies);
-                int id = factory.first, now_loc = factory.second;
-                int x = now_loc%map_width[my_Planet], y = now_loc/map_width[my_Planet];
+
+                // Convenience variables
+                int id = factory.first;
+                int now_loc = factory.second;
+                int x = now_loc%map_width[my_Planet];
+                int y = now_loc/map_width[my_Planet];
+
+                // If there are enemies nearby
                 if(nearby_enemies.size())
                 {
+                    // Put itself in the high_priority queue to make stuff before other factories
                     high_priority.push_back(factory.first);
+
+                    // Set a default in case none of the enemies can reach
                     int ene_loc = nearby_enemies[0].second;
                     unsigned int nearest_enemy_dist = -1;
+
+                    // Find the closest enemy
                     for(int i = 0; i < 8; i++) if(!out_of_bound(now_loc, i) && passable[my_Planet][now_loc+go(i)])
-                        for(auto enemy:nearby_enemies) if(shortest_distance[now_loc+go(i)][enemy.second] < nearest_enemy_dist)
-                        {
-                            nearest_enemy_dist = shortest_distance[now_loc+go(i)][enemy.second];
-                            ene_loc = enemy.second;
-                        }
-                    int ene_x = ene_loc%map_width[my_Planet], ene_y = ene_loc/map_width[my_Planet];
+                        for(auto enemy:nearby_enemies)
+                            if(shortest_distance[now_loc+go(i)][enemy.second] < nearest_enemy_dist)
+                            {
+                                nearest_enemy_dist = shortest_distance[now_loc+go(i)][enemy.second];
+                                ene_loc = enemy.second;
+                            }
+                    // Decode enemy location into x and y variables
+                    int ene_x = ene_loc%map_width[my_Planet];
+                    int ene_y = ene_loc/map_width[my_Planet];
+
+                    // This is weird, but it works. Output is enemy_direction
                     int index = 0;
                     if(ene_x > x) index += 6;
                     else if(ene_x == x) index += 3;
@@ -2063,6 +2104,17 @@ int main() {
             if(high_priority[ii] == tmprandom[i])
                 swap(tmprandom[i], tmprandom[ii]);
         for(int ii = 0; ii < teammates.size(); ii++)
+            /*
+                Loops through all robots, giving them function
+                Unit codes:
+                Worker = 0,
+                Knight = 1,
+                Ranger = 2,
+                Mage = 3,
+                Healer = 4,
+                Factory = 5,
+                Rocket = 6,
+            */
         {
             if(round >= print_round) cout<<"INIT"<<endl;
             Ptr<bc_Unit> unit(teammates[tmprandom[ii]].second);
@@ -2076,29 +2128,70 @@ int main() {
             if(type != Worker && (round >= 425 || round-last_attack_round[id] >= 50))
                 if(try_walk_to_rocket(id, type, now_loc)) update_unit_location(id, unit, now_loc);
             bool should_overcharge = 0;
-//            Here is what a worker will do
+
+            // Workers' actions
             if(type == Worker)
             {
                 if(round >= print_round) cout<<"Worker"<<endl;
+
+                // Initial variables that govern workers' actions. Most (or all) decisions check these two before doing anything
                 bool done = 0, dontmove = 0;
-                //cout<<"LOC"<<now_loc%map_width[my_Planet]<<' '<<now_loc/map_width[my_Planet]<<endl;
-                //cout<<worker_build_target[id]<<' '<<should_stay[id]<<endl;
+
+                // Plug for first 20 rounds
+                if(round < 20){
+                    if(initial_workers == 1){
+                        if(round < 16){
+                            if(try_replicate(id, now_loc).first) done = dontmove = 1;
+                            if(try_harvest(id)) done = dontmove = 1;
+                        }
+                    }
+                    else if(initial_workers == 2){
+                        if(round < 12){
+                            if(try_replicate(id, now_loc).first) done = dontmove = 1;
+                            if(try_harvest(id)) done = dontmove = 1;
+                        }
+                    }
+                    else if(initial_workers == 3){
+                        if(round < 10){
+                            if(try_replicate(id, now_loc).first) done = dontmove = 1;
+                            if(try_harvest(id)) done = dontmove = 1;
+                        }
+                    }
+                }
+
+                // Apply logic of worker_build_target (Basically, factories and rockets, built and unbuilt, can request workers)
                 if(worker_build_target[id] != -1 && !should_stay[id])
                 {
-                    dontmove = 1;
                     if(bc_GameController_is_move_ready(gc, id))
-                        if(walk_to_build(id, now_loc, worker_build_target[id])) update_unit_location(id, unit, now_loc);
+                        if(walk_to_build(id, now_loc, worker_build_target[id]))
+                            update_unit_location(id, unit, now_loc);
+                    dontmove = 1;
                 }
+
+                // Reset should_stay, which is used in rocket calculation
                 should_stay[id] = 0;
+
+                // Build if possible
                 if(!done && try_build(id, now_loc)) done = dontmove = 1; //Stay still to continue building
+
+                // Repair if possible
                 if(!done && try_repair(id, now_loc)) done = dontmove = 1; //Stay still to continue repairing
+
+                // Place rocket blueprint if not enough rockets already and should build a rocket and we have enough Karbonite and the worker is free...
                 if(!done && building_rocket.size()+built_rocket.size() < (teammates.size()+7)/8
                    && should_build_rocket && bc_GameController_karbonite(gc) >= 150 && worker_build_target[id] == -1)
+                    // Try to build a blueprint
                     if(try_blueprint(id, now_loc, Rocket)) done = dontmove = 1; //Stay still to build rocket
+
+                // Place a factory blueprint if worker is free and either not late game or not enough factories in late game
                 if(!done && worker_build_target[id] == -1 && (!should_build_rocket || my_factories.size() <= 4))
                     if(try_blueprint(id, now_loc, Factory)) done = dontmove = 1; //Stay still to build factory
+
+                // Claim 3x3 area for karbonite
                 if(can_harvest(id)) to_be_harvest(now_loc);
                 else if(!dontmove && (my_Planet == Mars || round <= 150) && walk_to_harvest(id, now_loc)) update_unit_location(id, unit, now_loc);
+
+                // See if he should replicate
                 if(!done && should_replicate(id, now_loc, karb, round) && (my_Planet == Mars || typecount[0] <= passable_count[my_Planet]/20))
                 {
                     auto tmprep = replicate_to_harvest(id, now_loc);
@@ -2110,7 +2203,11 @@ int main() {
                     }
                     else if(try_harvest(id)) done = dontmove = 1;
                 }
+
+                // Try to harvest
                 else if(!done && try_harvest(id)) done = dontmove = 1;
+
+                // Idle
                 if(!dontmove && can_move(id))
                 {
                     if(!try_walk_to_rocket(id, type, now_loc))
@@ -2130,16 +2227,22 @@ int main() {
                 }
                 if(worker_build_target[id] == -1 || !units[worker_build_target[id]] || bc_Unit_structure_is_built(units[worker_build_target[id]]))
                     worker_build_target[id] = -1;
-                worker_is_building[id] = 0;
                 check_errors("Worker's turn");
             }
             else if(type == Factory)
             {
                 if(round >= print_round) cout<<"Factory"<<endl;
+
+                // Don't do anything if the factory hasn't been finished yet
                 if(!bc_Unit_structure_is_built(unit)) continue;
+
+                // Always unload all units as soon as possible
                 while(1)
                     if(!try_unload(id, now_loc).first) break;
+
+                // If we can't build a knight, we can't build anything, so do nothing
                 if(!bc_GameController_can_produce_robot(gc, id, Knight)) continue;
+
                 if(should_build_rocket && !need_worker && karb-40 < ((teammates.size()+7)/8-building_rocket.size()-built_rocket.size())*200 && typecount[0]) continue;
                 vector<int> weight({0,0,10,0,min(3, (int)round/20)});
                 if(should_build_rocket) weight[0] = 1, weight[1] = 3, weight[3] = 3;
