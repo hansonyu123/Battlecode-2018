@@ -1909,6 +1909,7 @@ int main() {
                     build_health_intercept = built_health_at_reaching_round - build_health_slope*round_to_reach;
                     int new_build_round = (need_health-build_health_intercept-1)/build_health_slope+1;
                     if(build_round - new_build_round < 5) break;
+                    build_round = new_build_round;
                     worker_build_target[worker_id] = factory.second;
                 }
             }
