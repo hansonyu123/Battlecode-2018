@@ -144,6 +144,7 @@ Ptr<bc_Unit> units[2500];
 int enemies_max_total_damage[2500];
 int connected_comp_label[2500];
 bool being_harvested[2500];
+bool have_plenty_of_time;
 vector<pair<pair<int,int>,Ptr<bc_Unit>>> enemies;
 vector<pair<pair<int,int>,Ptr<bc_Unit>>> teammates;
 map<int, int> my_factories;
@@ -1203,7 +1204,7 @@ bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
             nearest_knight_id = bc_Unit_id(enemies[i].second);
         }
     }
-    if(nearest_dist == -1) return 0;
+    if(nearest_dist == -1 && !((type == Healer || type == Ranger) && have_plenty_of_time)) return 0;
     if(type == Knight && nearest_factory_dist < 2*nearest_dist) return walk_to(id, now_loc, nearest_factory_loc);
     else if(nearest_knight_dist != -1 && (type == Mage || type == Ranger) && bc_GameController_can_attack(gc, id, nearest_knight_id))
     {
@@ -1212,7 +1213,27 @@ bool walk_to_enemy(int id, int now_loc, bc_UnitType type)
                 if(walk_to(id, now_loc, now_loc+go(i))) return 1;
         return 0;
     }
-    if(type == Knight || !get_total_damage(now_loc)) return walk_to(id, now_loc, nearest_loc);
+    if(type == Knight) return walk_to(id, now_loc, nearest_loc);
+    if(get_total_damage(now_loc)) return 0;
+    if((type == Healer || type == Ranger) && have_plenty_of_time)
+    {
+        for(int i = 0; i < enemies.size(); i++)
+        {
+            int old_x = enemies[i].first.first, old_y = enemies[i].first.second;
+            for(int difx = max(-old_x, -7); difx <= min(map_width[my_Planet]-1-old_x, 7); difx++)
+                for(int dify = max(-old_y, -7); dify <= min(map_height[my_Planet]-1-old_y, 7); dify++)
+                {
+                    if(difx*difx+dify*dify > 50) continue;
+                    int x = difx+old_x, y = dify+old_y;
+                    if(shortest_distance[y*w+x][nowy*w+nowx] < nearest_dist)
+                    {
+                        nearest_dist = shortest_distance[y*w+x][nowy*w+nowx];
+                        nearest_loc = y*w+x;
+                    }
+                }
+        }
+    }
+    if(nearest_dist != -1) return walk_to(id, now_loc, nearest_loc);
 }
 
 bool walk_to_heal(int id, int now_loc, int round)
@@ -1696,16 +1717,15 @@ int main() {
     if(my_Planet == Earth)
     {
         bc_GameController_queue_research(gc, Worker);
-        bc_GameController_queue_research(gc, Knight);
         bc_GameController_queue_research(gc, Healer);
         bc_GameController_queue_research(gc, Healer);
-        bc_GameController_queue_research(gc, Ranger);
+        bc_GameController_queue_research(gc, Healer);
         bc_GameController_queue_research(gc, Rocket);
-        bc_GameController_queue_research(gc, Healer);
+        bc_GameController_queue_research(gc, Ranger);
         bc_GameController_queue_research(gc, Ranger);
         bc_GameController_queue_research(gc, Ranger);
         for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Mage);
-        for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Knight);
+        for(int i = 0; i < 4; i++) bc_GameController_queue_research(gc, Knight);
         for(int i = 0; i < 3; i++) bc_GameController_queue_research(gc, Worker);
     }
 
@@ -1831,6 +1851,8 @@ int main() {
         // Maintains a count of consecutive rounds with enemies in sight
         if(enemies.size()) have_enemy_round++;
         else have_enemy_round = 0;
+
+       have_plenty_of_time = (typecount[2]+typecount[4] <= 100);
 
         // We want to start building rockets around round 500
         should_build_rocket = round >= 500;
